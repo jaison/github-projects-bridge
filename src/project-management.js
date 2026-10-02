@@ -448,7 +448,9 @@ export function registerProjectManagementTools({
       if (field.dataType !== "SINGLE_SELECT" && field.dataType !== "MULTI_SELECT") {
         throw new Error("Field must be SINGLE_SELECT or MULTI_SELECT.");
       }
-      const existing = field.dataType === "MULTI_SELECT"\n        ? (Array.isArray(field.multiSelectOptions) ? field.multiSelectOptions : [])\n        : (Array.isArray(field.options) ? field.options : []);
+      const existing = field.dataType === "MULTI_SELECT"
+        ? (Array.isArray(field.multiSelectOptions) ? field.multiSelectOptions : [])
+        : (Array.isArray(field.options) ? field.options : []);
       if (existing.some(o => o.name === option.name)) {
         throw new Error("An option with this name already exists: " + option.name);
       }
@@ -491,7 +493,9 @@ export function registerProjectManagementTools({
       if (field.dataType !== "SINGLE_SELECT" && field.dataType !== "MULTI_SELECT") {
         throw new Error("Field must be SINGLE_SELECT or MULTI_SELECT.");
       }
-      const existing = field.dataType === "MULTI_SELECT"\n        ? (Array.isArray(field.multiSelectOptions) ? field.multiSelectOptions : [])\n        : (Array.isArray(field.options) ? field.options : []);
+      const existing = field.dataType === "MULTI_SELECT"
+        ? (Array.isArray(field.multiSelectOptions) ? field.multiSelectOptions : [])
+        : (Array.isArray(field.options) ? field.options : []);
       const target = existing.find(o => o.id === option_id);
       if (!target) throw new Error("Field option not found: " + option_id);
       const options = existing.map(o => ({
@@ -519,7 +523,9 @@ export function registerProjectManagementTools({
       if (field.dataType !== "SINGLE_SELECT" && field.dataType !== "MULTI_SELECT") {
         throw new Error("Field must be SINGLE_SELECT or MULTI_SELECT.");
       }
-      const existing = field.dataType === "MULTI_SELECT"\n        ? (Array.isArray(field.multiSelectOptions) ? field.multiSelectOptions : [])\n        : (Array.isArray(field.options) ? field.options : []);
+      const existing = field.dataType === "MULTI_SELECT"
+        ? (Array.isArray(field.multiSelectOptions) ? field.multiSelectOptions : [])
+        : (Array.isArray(field.options) ? field.options : []);
       if (!existing.some(o => o.id === option_id)) throw new Error("Field option not found: " + option_id);
       if (existing.length <= 1) throw new Error("Refusing to remove the last option from a select field.");
       const options = existing.filter(o => o.id !== option_id).map(o => ({
@@ -715,7 +721,8 @@ export function registerProjectManagementTools({
       if (title === undefined && body === undefined && assignee_ids === undefined) {
         throw new Error("Provide at least one draft issue property to update.");
       }
-      const resolvedDraftIssueId = await resolveDraftIssueId(graphql, draft_issue_id);\n      const input = { draftIssueId: resolvedDraftIssueId };
+      const resolvedDraftIssueId = await resolveDraftIssueId(graphql, draft_issue_id);
+      const input = { draftIssueId: resolvedDraftIssueId };
       if (title !== undefined) input.title = title;
       if (body !== undefined) input.body = body;
       if (assignee_ids !== undefined) input.assigneeIds = assignee_ids;
@@ -731,7 +738,8 @@ export function registerProjectManagementTools({
     { item_id: z.string(), repository_id: z.string() },
     async ({ item_id, repository_id }) => {
       const query = "mutation($input:ConvertProjectV2DraftIssueItemToIssueInput!){convertProjectV2DraftIssueItemToIssue(input:$input){item{id type content{... on Issue{id title number url}}}}}";
-      const normalizedRepositoryId = await resolveRepositoryId(repository_id);\n      const data = await graphql(query, { input: { itemId: item_id, repositoryId: normalizedRepositoryId } });
+      const normalizedRepositoryId = await resolveRepositoryId(repository_id);
+      const data = await graphql(query, { input: { itemId: item_id, repositoryId: normalizedRepositoryId } });
       return result(data?.convertProjectV2DraftIssueItemToIssue?.item);
     }
   );
@@ -864,7 +872,8 @@ export function registerProjectManagementTools({
     { project_id: z.string(), repository_id: z.string() },
     async ({ project_id, repository_id }) => {
       const query = "mutation($input:LinkProjectV2ToRepositoryInput!){linkProjectV2ToRepository(input:$input){repository{id name nameWithOwner url}}}";
-      const normalizedRepositoryId = await resolveRepositoryId(repository_id);\n      const data = await graphql(query, { input: { projectId: project_id, repositoryId: normalizedRepositoryId } });
+      const normalizedRepositoryId = await resolveRepositoryId(repository_id);
+      const data = await graphql(query, { input: { projectId: project_id, repositoryId: normalizedRepositoryId } });
       return result(data?.linkProjectV2ToRepository?.repository);
     }
   );
@@ -875,7 +884,8 @@ export function registerProjectManagementTools({
     { project_id: z.string(), repository_id: z.string() },
     async ({ project_id, repository_id }) => {
       const query = "mutation($input:UnlinkProjectV2FromRepositoryInput!){unlinkProjectV2FromRepository(input:$input){repository{id name nameWithOwner url}}}";
-      const normalizedRepositoryId = await resolveRepositoryId(repository_id);\n      const data = await graphql(query, { input: { projectId: project_id, repositoryId: normalizedRepositoryId } });
+      const normalizedRepositoryId = await resolveRepositoryId(repository_id);
+      const data = await graphql(query, { input: { projectId: project_id, repositoryId: normalizedRepositoryId } });
       return result(data?.unlinkProjectV2FromRepository?.repository);
     }
   );
