@@ -163,7 +163,6 @@ const transports = new Map();
 const transportSubjects = new Map();
 const transportClients = new Map();
 const transportAuth = new Map();
-const transportSubjects = new Map();
 const httpServer = createServer(async (req, res) => {
   const url = new URL(req.url || "/", oauth.publicUrl);
   if (await oauth.handle(req, res, url)) return;
