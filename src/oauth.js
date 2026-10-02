@@ -60,7 +60,7 @@ function verifyJwt(token, secret, issuer, audience) {
     const header = JSON.parse(Buffer.from(parts[0], "base64url").toString());
     const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString());
     if (header.alg !== "HS256" || payload.iss !== issuer || payload.aud !== audience || payload.exp <= now() || payload.nbf > now()) return null;
-    if (typeof payload.sub !== "string" || !Array.isArray(payload.scope)) return null;
+    if (typeof payload.sub !== "string" || !Array.isArray(payload.scopes)) return null;
     return payload;
   } catch {
     return null;
@@ -182,7 +182,7 @@ export function createOAuth() {
         if (typeof uri !== "string") return false;
         try {
           const parsed = new URL(uri);
-          return parsed.protocol === "https:" ||
+          return (parsed.protocol === "https:" && ["chatgpt.com", "chat.openai.com"].includes(parsed.hostname)) ||
             (parsed.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname));
         } catch {
           return false;
@@ -272,7 +272,7 @@ export function createOAuth() {
         state.consents[consentId] = { ...request, username: user.login, createdAt: now() };
         await persist();
         const scopeText = request.scopes.join(", ");
-        html(res, 200, `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Autorizar GitHub Projects Bridge</title><body style="font:16px system-ui;max-width:560px;margin:10vh auto;padding:24px;color:#222"><h1>Autorizar acesso</h1><p>Conta GitHub: <strong>${escapeHtml(user.login)}</strong></p><p>O ChatGPT solicita as permissões: <strong>${escapeHtml(scopeText)}</strong>.</p><form method="post" action="/oauth/consent"><input type="hidden" name="consent_id" value="${consentId}"><button name="decision" value="approve">Autorizar</button> <button name="decision" value="deny">Negar</button></form></body></html>`);
+        html(res, 200, `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Autorizar GitHub Projects Bridge</title><body style="font:16px system-ui;max-width:560px;margin:10vh auto;padding:24px;color:#222"><h1>Autorizar acesso</h1><p>Conta GitHub: <strong>${escapeHtml(user.login)}</strong></p><p>Aplicativo: <strong>${escapeHtml(request.clientName)}</strong></p><p>O aplicativo solicita as permissões: <strong>${escapeHtml(scopeText)}</strong>.</p><form method="post" action="/oauth/consent"><input type="hidden" name="consent_id" value="${consentId}"><button name="decision" value="approve">Autorizar</button> <button name="decision" value="deny">Negar</button></form></body></html>`);
       } catch {
         html(res, 502, "<h1>Não foi possível autenticar com o GitHub. Tente novamente.</h1>");
       }
