@@ -16,8 +16,8 @@ if (!GITHUB_TOKEN || !DEFAULT_OWNER) {
 const oauth = createOAuth();
 
 function bearerToken(req) {
-  const match = /^Bearer\\s+(.+)$/i.exec(req.headers.authorization || "");
-  return match?.[1] || "";
+  const value = String(req.headers.authorization || "");
+  return value.slice(0, 7).toLowerCase() === "bearer " ? value.slice(7).trim() : "";
 }
 
 function requiredScope(message) {
