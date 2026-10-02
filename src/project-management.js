@@ -46,7 +46,7 @@ async function resolveDraftIssueId(graphql, draftIssueIdOrItemId) {
     "query($id:ID!){node(id:$id){__typename " +
     "... on DraftIssue{id} " +
     "... on ProjectV2Item{content{... on DraftIssue{id}}}" +
-    "}}}";
+    "}}";
   const data = await graphql(query, { id: draftIssueIdOrItemId });
   const node = data?.node;
   const draftIssueId = node?.__typename === "DraftIssue"
