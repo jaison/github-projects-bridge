@@ -91,6 +91,32 @@ async function readProjectItems(projectId, first = 100) {
   return items;
 }
 
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+async function findProjectItemWithRetry(projectId, itemId, attempts = 5) {
+  const delays = [0, 250, 500, 1000, 2000];
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (delays[attempt] > 0) await sleep(delays[attempt]);
+
+    const items = await readProjectItems(projectId);
+    const item = findProjectItem(items, itemId);
+
+    console.log(
+      "[GPB][Verify] action=create_project_draft project=%s item=%s attempt=%d/%d found=%s",
+      projectId,
+      itemId,
+      attempt + 1,
+      attempts,
+      item ? "yes" : "no"
+    );
+
+    if (item) return item;
+  }
+
+  return null;
+}
+
 function toolLogArgs(name, args) {
   const fields = ["project_id", "item_id", "field_id", "option_id", "title"];
   const parts = fields
@@ -249,10 +275,9 @@ function makeMcpServer(authContext) {
         throw new Error("GitHub returned no project item for addProjectV2DraftIssue.");
       }
 
-      const items = await readProjectItems(project_id);
-      const verifiedItem = findProjectItem(items, createdItemId);
+      const verifiedItem = await findProjectItemWithRetry(project_id, createdItemId);
       if (!verifiedItem) {
-        throw new Error("Read-after-write verification failed: created draft item was not found in the project.");
+        throw new Error("Read-after-write verification failed: created draft item was not visible in the project after 5 attempts.");
       }
 
       const verifiedTitle = verifiedItem.content?.title;
