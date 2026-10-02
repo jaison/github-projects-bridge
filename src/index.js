@@ -421,7 +421,7 @@ function makeMcpServer(authContext) {
         throw new Error("GitHub returned no project item for addProjectV2DraftIssue.");
       }
 
-      const verifiedItem = await findProjectItemWithRetry(project_id, createdItemId);
+      const verifiedItem = await findProjectItemWithRetry(project_id, createdItemId, graphql);
       if (!verifiedItem) {
         throw new Error("Read-after-write verification failed: created draft item was not visible in the project after 5 attempts.");
       }
@@ -510,7 +510,7 @@ function makeMcpServer(authContext) {
         throw new Error("GitHub returned no deletedItemId for deleteProjectV2Item.");
       }
 
-      const items = await readProjectItems(project_id);
+      const items = await readProjectItems(project_id, 100, graphql);
       if (findProjectItem(items, item_id)) {
         throw new Error("Read-after-write verification failed: deleted item is still present in the project.");
       }
