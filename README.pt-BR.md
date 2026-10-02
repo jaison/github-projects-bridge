@@ -39,7 +39,7 @@ cp .env.example .env
 | `GITHUB_TOKEN` | Sim | Personal Access Token (classic) com o escopo `project` (**Full control of projects**) para Projects V2 de conta pessoal. |
 | `MCP_ACCESS_TOKEN` | Sim | Segredo forte e privado usado para autenticar chamadas ao endpoint MCP. |
 | `GITHUB_OWNER` | Sim | Login do usuário ou organização do GitHub proprietária dos projetos. |
-| `PORT` | Não | Porta HTTP interna. O padrão é `3000`. |
+| `PORT` | Não | Porta HTTP interna. O padrão é `80`. |
 
 ### Como gerar o token do GitHub
 
@@ -72,10 +72,10 @@ npm install
 npm start
 ```
 
-Por padrão, o servidor escuta em `0.0.0.0:3000`.
+Por padrão, o servidor escuta em `0.0.0.0:80`.
 
 ```bash
-curl http://localhost:3000/health
+curl http://localhost:80/health
 ```
 
 Resposta esperada:
@@ -90,7 +90,7 @@ Resposta esperada:
 docker build -t github-projects-bridge .
 docker run -d \
   --name github-projects-bridge \
-  -p 3000:3000 \
+  -p 80:80 \
   --env-file .env \
   github-projects-bridge
 ```
@@ -100,7 +100,7 @@ docker run -d \
 1. Crie um serviço do tipo **App** conectado a este repositório do GitHub.
 2. Selecione **Dockerfile** como método de build e utilize o Dockerfile da raiz.
 3. Cadastre as variáveis de ambiente listadas acima nas configurações do serviço. Não versione um arquivo `.env`.
-4. Configure a porta interna como `3000` e associe um domínio com HTTPS.
+4. Configure a porta interna como `80` e associe um domínio com HTTPS.
 5. Faça o deploy e verifique `https://SEU-DOMINIO/health`.
 
 O endpoint MCP será `https://SEU-DOMINIO/mcp`. As requisições devem incluir:
