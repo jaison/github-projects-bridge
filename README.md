@@ -6,7 +6,7 @@ A remote [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server
 
 ## Tools and scopes
 
-All Project V2 tools are exposed under both OAuth scopes: `projects:read` and `projects:write`. This keeps authorization in a single consent flow.
+All Project V2 tools are exposed under the MCP OAuth scopes `projects:read` and `projects:write`. The GitHub login behind that consent requests the GitHub scopes `read:user`, `project`, `repo`, `read:org` and `offline_access`, so the bridge can perform project, repository/issue/PR and team operations on behalf of the authenticated GitHub user.
 
 ### Projects
 
@@ -47,15 +47,15 @@ The current GitHub GraphQL Projects schema exposes workflow deletion, but no wor
 ## Requirements
 
 - Node.js 22 or Docker.
-- A GitHub Personal Access Token (classic) with the `project` scope for personal-account Projects V2.
-- A GitHub OAuth App.
+- A GitHub OAuth App with permission to request `read:user`, `project`, `repo`, `read:org` and `offline_access`.
+- A `GITHUB_TOKEN` is optional and is retained only as a temporary legacy fallback for existing connections.
 - A public HTTPS URL and persistent storage for OAuth state.
 
 ## Environment variables
 
 | Variable | Required | Description |
 | --- | --- | --- |
-| `GITHUB_TOKEN` | Yes | Classic PAT with `project` (**Full control of projects**), used by the server for GraphQL calls. |
+| `GITHUB_TOKEN` | No | Legacy service token fallback. New OAuth connections use the authenticated GitHub user token instead. |
 | `GITHUB_OWNER` | Yes | GitHub login of the user or organization that owns the projects. |
 | `PUBLIC_URL` | Yes | Canonical public HTTPS URL of this MCP server, without trailing slash. |
 | `GITHUB_OAUTH_CLIENT_ID` | Yes | GitHub OAuth App client ID. |
@@ -77,7 +77,7 @@ The current GitHub GraphQL Projects schema exposes workflow deletion, but no wor
 
 **Do not add ChatGPT's redirect URI to this GitHub section.** ChatGPT is the OAuth client for the MCP server: it supplies its own `redirect_uri` to the Dynamic Client Registration endpoint (`/oauth/register`), and the bridge validates and stores that URI for the session. The redirect URI configured in the GitHub OAuth App is exclusively `PUBLIC_URL/oauth/github/callback`.
 
-The login flow requests only GitHub's `read:user` scope. OAuth login and the service token used for Projects V2 are separate credentials.
+The GitHub authorization flow requests `read:user project repo read:org offline_access`. `project` enables read/write access to user and organization Projects; `repo` enables repository, issue and pull-request operations and also covers organization-owned project resources; `read:org` enables organization/team reads; `offline_access` requests an expiring access token plus refresh-token support. GitHub OAuth scopes limit what the token can do but do not grant permissions the user does not already have.
 
 ## Generate the signing secret
 
@@ -89,11 +89,13 @@ openssl rand -hex 32
 
 Set the result as `OAUTH_SIGNING_SECRET`. Do not reuse the GitHub PAT or OAuth Client Secret.
 
-## GitHub service token
+## GitHub OAuth credential
 
-For Projects V2 owned by a personal GitHub account, create a classic Personal Access Token with the `project` scope — **Full control of projects**. Do not add `repo` solely for project-board operations.
+The bridge now uses the GitHub OAuth access token belonging to the authenticated user for GraphQL and REST calls. The GitHub credential is encrypted before being stored in `/data`, and MCP access tokens contain only a reference to that encrypted credential.
 
-`GITHUB_TOKEN` stays on the server. ChatGPT receives an OAuth access token issued by this bridge, never the PAT. All authorized users operate with the permissions of this service token.
+This means each authorized user acts with their own GitHub permissions. A legacy `GITHUB_TOKEN` may remain configured during migration; it is used only when an older MCP session has no GitHub OAuth credential yet.
+
+The broadest requested scope is `repo`, because GitHub OAuth Apps do not expose the granular repository permissions available to GitHub Apps. GitHub documents that `repo` grants full access to repositories and also enables management of organization-owned projects and team memberships. For teams, this bridge additionally requests `read:org` because the GitHub GraphQL team fields require it.
 
 ## Persistence
 
@@ -122,7 +124,7 @@ On Easypanel, mount a persistent volume at `/data`. This implementation assumes 
 - `POST /oauth/token` — authorization-code exchange and token refresh.
 - `GET /oauth/github/callback` — GitHub authentication callback.
 
-Register `https://YOUR-DOMAIN/mcp` in ChatGPT and select OAuth as the authentication method. ChatGPT supplies its redirect URI during dynamic registration; you do not need to add it manually to the GitHub OAuth App. The server advertises the `projects:read` and `projects:write` scopes.
+Register `https://YOUR-DOMAIN/mcp` in ChatGPT and select OAuth as the authentication method. ChatGPT supplies its redirect URI during dynamic registration; you do not need to add it manually to the GitHub OAuth App. The server advertises the `projects:read` and `projects:write` scopes. After upgrading from an older bridge version, disconnect/reconnect the GPB connection so GitHub can show and grant the newly requested scopes.
 
 ## Security and limitations
 
@@ -131,7 +133,7 @@ Register `https://YOUR-DOMAIN/mcp` in ChatGPT and select OAuth as the authentica
 - Protect the `/data` volume and environment variables.
 - Access tokens expire after 15 minutes; refresh tokens rotate and expire after 30 days.
 - JSON-file state is designed for a single instance. For high availability or multiple replicas, migrate state to a shared database.
-- OAuth enables authentication, but availability of write tools also depends on ChatGPT plan permissions.
+- GitHub OAuth permissions are requested from the user during GitHub authorization. The bridge cannot elevate a user beyond their GitHub account, repository or organization permissions.
 
 ## License
 
