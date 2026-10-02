@@ -61,7 +61,7 @@ function registerTool(server, name, description, schema, handler) {
 function makeMcpServer() {
   const server = new McpServer({ name: "github-projects-bridge", version: "0.1.0" });
 
-  server.tool(
+  registerTool(server,
     "list_projects",
     "List GitHub Projects V2 owned by a user or organization.",
     {
@@ -79,7 +79,7 @@ function makeMcpServer() {
     }
   );
 
-  server.tool(
+  registerTool(server,
     "get_project",
     "Get a GitHub Project V2, including its fields and options.",
     { project_id: z.string() },
@@ -90,7 +90,7 @@ function makeMcpServer() {
     }
   );
 
-  server.tool(
+  registerTool(server,
     "list_project_items",
     "List cards/items in a GitHub Project V2.",
     {
@@ -104,7 +104,7 @@ function makeMcpServer() {
     }
   );
 
-  server.tool(
+  registerTool(server,
     "create_project_draft",
     "Create a draft card in a GitHub Project V2.",
     {
@@ -119,7 +119,7 @@ function makeMcpServer() {
     }
   );
 
-  server.tool(
+  registerTool(server,
     "update_project_single_select",
     "Set a single-select field (for example Status or Priority) on a project item.",
     {
@@ -142,7 +142,7 @@ function makeMcpServer() {
     }
   );
 
-  server.tool(
+  registerTool(server,
     "delete_project_item",
     "Remove an item/card from a GitHub Project V2.",
     { project_id: z.string(), item_id: z.string() },
@@ -157,6 +157,7 @@ function makeMcpServer() {
 }
 
 const transports = new Map();
+const transportSubjects = new Map();
 const httpServer = createServer(async (req, res) => {
   const url = new URL(req.url || "/", oauth.publicUrl);
   if (await oauth.handle(req, res, url)) return;
@@ -192,7 +193,7 @@ const httpServer = createServer(async (req, res) => {
 
   const claims = oauth.verifyAccessToken(bearerToken(req));
   const scope = requiredScope(parsed);
-  if (!claims || !claims.scope.includes(scope)) {
+  if (!claims || !(claims.scope.includes(scope) || (scope === "projects:read" && claims.scope.includes("projects:write")) )) {
     const metadataUrl = oauth.publicUrl + "/.well-known/oauth-protected-resource";
     res.writeHead(401, {
       "content-type": "application/json",
@@ -205,14 +206,19 @@ const httpServer = createServer(async (req, res) => {
 
   const sessionId = req.headers["mcp-session-id"];
   let transport = sessionId ? transports.get(sessionId) : undefined;
+  if (transport && transportSubjects.get(sessionId) !== claims.sub) {
+    res.writeHead(404);
+    res.end("Unknown MCP session");
+    return;
+  }
   if (!transport && req.method === "POST") {
     transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
-      onsessioninitialized: id => transports.set(id, transport)
+      onsessioninitialized: id => { transports.set(id, transport); transportSubjects.set(id, claims.sub); }
     });
     transport.onclose = () => {
       const id = transport.sessionId;
-      if (id) transports.delete(id);
+      if (id) { transports.delete(id); transportSubjects.delete(id); }
     };
     const server = makeMcpServer();
     await server.connect(transport);
