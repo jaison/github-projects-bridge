@@ -19,7 +19,7 @@ const ITEM_FRAGMENT =
   " ... on ProjectV2ItemFieldDateValue{date field{... on ProjectV2Field{id name dataType}}}" +
   " ... on ProjectV2ItemFieldIterationValue{iterationId field{... on ProjectV2IterationField{id name dataType}}}" +
   " ... on ProjectV2ItemFieldSingleSelectValue{name optionId field{... on ProjectV2SingleSelectField{id name dataType}}}" +
-  " ... on ProjectV2ItemFieldMultiSelectValue{value options{id name color description} field{... on ProjectV2MultiSelectField{id name dataType}}}" +
+  "" +
   "}}";
 
 function result(value) {
