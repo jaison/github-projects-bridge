@@ -6,7 +6,7 @@ Servidor remoto do [Model Context Protocol (MCP)](https://modelcontextprotocol.i
 
 ## Ferramentas e permissões
 
-Todas as ferramentas de Projects V2 são expostas com os dois escopos OAuth: `projects:read` e `projects:write`. Isso mantém a autorização em uma única etapa de consentimento.
+Todas as ferramentas de Projects V2 são expostas com os escopos OAuth do MCP `projects:read` e `projects:write`. O login do GitHub por trás desse consentimento solicita `read:user`, `project`, `repo`, `read:org` e `offline_access`, permitindo que o bridge execute operações de projetos, repositórios/Issues/PRs e times em nome do usuário GitHub autenticado.
 
 ### Projetos
 
@@ -47,15 +47,15 @@ O schema GraphQL atual do GitHub expõe exclusão de workflows, mas não mutatio
 ## Requisitos
 
 - Node.js 22 ou Docker.
-- GitHub Personal Access Token (classic) com escopo `project` para Projects V2 de conta pessoal.
-- Uma GitHub OAuth App.
+- Uma GitHub OAuth App com autorização para solicitar `read:user`, `project`, `repo`, `read:org` e `offline_access`.
+- `GITHUB_TOKEN` é opcional e permanece apenas como fallback temporário para conexões antigas.
 - URL pública HTTPS e armazenamento persistente para os dados OAuth.
 
 ## Variáveis de ambiente
 
 | Variável | Obrigatória | Descrição |
 | --- | --- | --- |
-| `GITHUB_TOKEN` | Sim | PAT classic com `project` (**Full control of projects**). Para vincular/consultar repositórios privados e trabalhar com Issues/PRs, adicione `repo`; para times/organizações, adicione `read:org`. |
+| `GITHUB_TOKEN` | Não | Fallback legado de token de serviço. Novas conexões OAuth usam o token do usuário GitHub autenticado. |
 | `GITHUB_OWNER` | Sim | Login do usuário ou organização proprietária dos projetos. |
 | `PUBLIC_URL` | Sim | URL HTTPS pública e canônica do MCP, sem barra final. |
 | `GITHUB_OAUTH_CLIENT_ID` | Sim | Client ID da GitHub OAuth App. |
@@ -77,7 +77,7 @@ O schema GraphQL atual do GitHub expõe exclusão de workflows, mas não mutatio
 
 **Não adicione o redirect URI do ChatGPT nessa seção do GitHub.** O ChatGPT é o cliente OAuth do servidor MCP: ele informa seu próprio `redirect_uri` ao endpoint de Dynamic Client Registration (`/oauth/register`), e o bridge valida e armazena esse endereço para a sessão. O redirect URI cadastrado na GitHub OAuth App é exclusivamente `PUBLIC_URL/oauth/github/callback`.
 
-O login solicita apenas o escopo `read:user` do GitHub. A autenticação OAuth e o token de serviço usado para acessar Projects V2 são credenciais distintas.
+O fluxo de autorização do GitHub solicita `read:user project repo read:org offline_access`. `project` habilita leitura/escrita de Projects do usuário e da organização; `repo` habilita operações de repositório, Issues e pull requests e também cobre recursos de projetos de organizações; `read:org` habilita leituras de organização/times; `offline_access` solicita token expirável com suporte a refresh token. Os escopos OAuth limitam o que o token pode fazer, mas não concedem ao aplicativo permissões que o usuário não possui.
 
 ## Gerar o segredo de assinatura
 
@@ -89,11 +89,13 @@ openssl rand -hex 32
 
 Use o resultado em `OAUTH_SIGNING_SECRET`. Não reutilize o PAT do GitHub nem o Client Secret OAuth.
 
-## Token de serviço do GitHub
+## Credencial OAuth do GitHub
 
-Para Projects V2 pertencentes a uma conta pessoal, crie um Personal Access Token (classic) com o escopo `project` — **Full control of projects**. Para os recursos de repositórios/Issues/PRs do bridge, o token também precisa de `repo`; para recursos de times/organizações, precisa de `read:org`.
+O bridge agora usa o access token OAuth do GitHub pertencente ao usuário autenticado para as chamadas GraphQL e REST. A credencial GitHub é criptografada antes de ser armazenada em `/data`, e os access tokens do MCP contêm apenas uma referência para essa credencial criptografada.
 
-O `GITHUB_TOKEN` fica exclusivamente no servidor. O ChatGPT recebe um access token OAuth emitido pelo bridge, nunca o PAT. As permissões efetivas das chamadas ao GitHub são as do `GITHUB_TOKEN`. Todos os usuários autorizados operam com as permissões desse token de serviço.
+Cada usuário autorizado, portanto, opera com suas próprias permissões do GitHub. Um `GITHUB_TOKEN` legado pode permanecer configurado durante a migração; ele é usado apenas quando uma sessão MCP antiga ainda não possui uma credencial OAuth do GitHub.
+
+O escopo mais amplo solicitado é `repo`, pois GitHub OAuth Apps não oferecem as permissões granulares de repositório disponíveis nos GitHub Apps. O GitHub documenta que `repo` concede acesso total aos repositórios e também permite administrar projetos pertencentes a organizações e associações de times. Para times, o bridge solicita adicionalmente `read:org` porque os campos de team do GraphQL do GitHub exigem esse escopo.
 
 ## Persistência
 
@@ -122,7 +124,7 @@ No Easypanel, monte um volume persistente em `/data`. Esta implementação press
 - `POST /oauth/token` — troca de authorization code e renovação de tokens.
 - `GET /oauth/github/callback` — callback de autenticação GitHub.
 
-Cadastre no ChatGPT o endereço `https://SEU-DOMINIO/mcp` e selecione OAuth como mecanismo de autenticação. O ChatGPT fornece seu redirect URI durante o registro dinâmico; não é necessário cadastrá-lo manualmente na GitHub OAuth App. O servidor anuncia os escopos `projects:read` e `projects:write`.
+Cadastre no ChatGPT o endereço `https://SEU-DOMINIO/mcp` e selecione OAuth como mecanismo de autenticação. O ChatGPT fornece seu redirect URI durante o registro dinâmico; não é necessário cadastrá-lo manualmente na GitHub OAuth App. O servidor anuncia os escopos `projects:read` e `projects:write`. Depois de atualizar a versão anterior, desconecte/reconecte o GPB para que o GitHub apresente e conceda os novos escopos.
 
 ## Segurança e limitações
 
@@ -131,7 +133,7 @@ Cadastre no ChatGPT o endereço `https://SEU-DOMINIO/mcp` e selecione OAuth como
 - Proteja o volume `/data` e as variáveis de ambiente.
 - Access tokens expiram em 15 minutos; refresh tokens são rotacionados e expiram em 30 dias.
 - O armazenamento JSON foi projetado para uma única instância. Para alta disponibilidade ou múltiplas réplicas, migre o estado para um banco de dados compartilhado.
-- OAuth habilita a autenticação, mas a disponibilidade das ferramentas de escrita também depende das permissões do plano ChatGPT.
+- As permissões OAuth do GitHub são solicitadas ao usuário durante a autorização. O bridge não pode elevar um usuário além das permissões que ele já possui na conta, repositório ou organização do GitHub.
 
 ## Licença
 
