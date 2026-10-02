@@ -1,5 +1,6 @@
 import {
   createHmac,
+  createHash,
   randomBytes,
   randomUUID,
   timingSafeEqual
@@ -177,8 +178,17 @@ export function createOAuth() {
       let input;
       try { input = JSON.parse(await readBody(req)); } catch { json(res, 400, { error: "invalid_client_metadata" }); return true; }
       const redirects = input.redirect_uris;
-      if (!Array.isArray(redirects) || redirects.length < 1 || redirects.length > 10 ||
-          redirects.some(uri => typeof uri !== "string" || !(uri.startsWith("https://") || /^http:\/\/(localhost|127\\.0\\.0\\.1)(:\\d+)?\\//.test(uri)))) {
+      const validRedirect = uri => {
+        if (typeof uri !== "string") return false;
+        try {
+          const parsed = new URL(uri);
+          return parsed.protocol === "https:" ||
+            (parsed.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname));
+        } catch {
+          return false;
+        }
+      };
+      if (!Array.isArray(redirects) || redirects.length < 1 || redirects.length > 10 || redirects.some(uri => !validRedirect(uri))) {
         json(res, 400, { error: "invalid_redirect_uri" });
         return true;
       }
@@ -314,7 +324,7 @@ export function createOAuth() {
         const record = state.codes[key];
         delete state.codes[key];
         const verifier = form.get("code_verifier") || "";
-        const challenge = verifier ? (await import("node:crypto")).createHash("sha256").update(verifier).digest("base64url") : "";
+        const challenge = verifier ? createHash("sha256").update(verifier).digest("base64url") : "";
         if (!record || record.expiresAt < now() || record.clientId !== clientId || record.redirectUri !== form.get("redirect_uri") || !safeEqual(challenge, record.challenge)) {
           await persist();
           json(res, 400, { error: "invalid_grant" });
