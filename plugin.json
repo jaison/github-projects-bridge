@@ -1,0 +1,17 @@
+{
+  "schema_version": "v1",
+  "name_for_human": "GitHub Projects Bridge",
+  "name_for_model": "github-projects-bridge",
+  "description_for_human": "Conecte o ChatGPT aos seus projetos do GitHub.",
+  "description_for_model": "Gerencie GitHub Projects V2, itens, rascunhos, campos e metadados através de um servidor MCP seguro.",
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "brandColor": "#24292F",
+        "brandColorDark": "#FFFFFF",
+        "logo": "./assets/logo.svg",
+        "composerIcon": "./assets/logo.svg"
+      }
+    }
+  }
+}
