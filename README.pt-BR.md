@@ -55,7 +55,7 @@ O schema GraphQL atual do GitHub expõe exclusão de workflows, mas não mutatio
 
 | Variável | Obrigatória | Descrição |
 | --- | --- | --- |
-| `GITHUB_TOKEN` | Sim | PAT classic com escopo `project` (**Full control of projects**), usado pelo servidor nas chamadas GraphQL. |
+| `GITHUB_TOKEN` | Sim | PAT classic com `project` (**Full control of projects**). Para vincular/consultar repositórios privados e trabalhar com Issues/PRs, adicione `repo`; para times/organizações, adicione `read:org`. |
 | `GITHUB_OWNER` | Sim | Login do usuário ou organização proprietária dos projetos. |
 | `PUBLIC_URL` | Sim | URL HTTPS pública e canônica do MCP, sem barra final. |
 | `GITHUB_OAUTH_CLIENT_ID` | Sim | Client ID da GitHub OAuth App. |
@@ -91,9 +91,9 @@ Use o resultado em `OAUTH_SIGNING_SECRET`. Não reutilize o PAT do GitHub nem o 
 
 ## Token de serviço do GitHub
 
-Para Projects V2 pertencentes a uma conta pessoal, crie um Personal Access Token (classic) com o escopo `project` — **Full control of projects**. Não adicione `repo` apenas para administrar quadros de projetos.
+Para Projects V2 pertencentes a uma conta pessoal, crie um Personal Access Token (classic) com o escopo `project` — **Full control of projects**. Para os recursos de repositórios/Issues/PRs do bridge, o token também precisa de `repo`; para recursos de times/organizações, precisa de `read:org`.
 
-O `GITHUB_TOKEN` fica exclusivamente no servidor. O ChatGPT recebe um access token OAuth emitido pelo bridge, nunca o PAT. Todos os usuários autorizados operam com as permissões desse token de serviço.
+O `GITHUB_TOKEN` fica exclusivamente no servidor. O ChatGPT recebe um access token OAuth emitido pelo bridge, nunca o PAT. As permissões efetivas das chamadas ao GitHub são as do `GITHUB_TOKEN`. Todos os usuários autorizados operam com as permissões desse token de serviço.
 
 ## Persistência
 
