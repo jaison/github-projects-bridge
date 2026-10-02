@@ -73,6 +73,46 @@ async function graphql(query, variables = {}) {
   return payload.data;
 }
 
+async function githubRestJson(path) {
+  const response = await fetch("https://api.github.com" + path, {
+    headers: {
+      Authorization: "Bearer " + GITHUB_TOKEN,
+      Accept: "application/vnd.github+json",
+      "User-Agent": "github-projects-bridge"
+    }
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error("GitHub REST request failed (" + response.status + "): " + JSON.stringify(payload));
+  }
+  return payload;
+}
+
+async function resolveRepositoryId(repositoryIdOrFullName) {
+  const value = String(repositoryIdOrFullName || "").trim();
+  if (!value) throw new Error("repository_id must not be empty.");
+  if (/^R_[A-Za-z0-9_-]+$/.test(value)) return value;
+
+  if (/^\d+$/.test(value)) {
+    const repository = await githubRestJson("/repositories/" + encodeURIComponent(value));
+    if (!repository?.node_id) throw new Error("GitHub returned no node_id for repository " + value);
+    return repository.node_id;
+  }
+
+  const normalized = value.replace(/^https:\/\/github\.com\//, "").replace(/^\/+|\/+$/g, "");
+  const parts = normalized.split("/");
+  if (parts.length === 2 && parts[0] && parts[1]) {
+    const data = await graphql(
+      "query($owner:String!,$name:String!){repository(owner:$owner,name:$name){id nameWithOwner}}",
+      { owner: parts[0], name: parts[1] }
+    );
+    if (!data?.repository?.id) throw new Error("Repository not found: " + value);
+    return data.repository.id;
+  }
+
+  return value;
+}
+
 async function readProject(projectId) {
   const query = "query($id:ID!){node(id:$id){... on ProjectV2{id number title shortDescription url closed}}}";
   const data = await graphql(query, { id: projectId });
@@ -83,7 +123,7 @@ async function readProject(projectId) {
 }
 
 async function readProjectItems(projectId, first = 100) {
-  const query = "query($id:ID!,$first:Int!){node(id:$id){... on ProjectV2{items(first:$first){nodes{id type content{... on Issue{title number url} ... on PullRequest{title number url} ... on DraftIssue{title body}} fieldValues(first:20){nodes{... on ProjectV2ItemFieldTextValue{text field{... on ProjectV2Field{id name} ... on ProjectV2IterationField{id name} ... on ProjectV2MultiSelectField{id name} ... on ProjectV2SingleSelectField{id name}}} ... on ProjectV2ItemFieldNumberValue{number field{... on ProjectV2Field{id name} ... on ProjectV2IterationField{id name} ... on ProjectV2MultiSelectField{id name} ... on ProjectV2SingleSelectField{id name}}} ... on ProjectV2ItemFieldDateValue{date field{... on ProjectV2Field{id name} ... on ProjectV2IterationField{id name} ... on ProjectV2MultiSelectField{id name} ... on ProjectV2SingleSelectField{id name}}} ... on ProjectV2ItemFieldSingleSelectValue{name optionId field{... on ProjectV2Field{id name} ... on ProjectV2IterationField{id name} ... on ProjectV2MultiSelectField{id name} ... on ProjectV2SingleSelectField{id name}}}}}}}}}}";
+  const query = "query($id:ID!,$first:Int!){node(id:$id){... on ProjectV2{items(first:$first){nodes{id type content{... on Issue{title number url} ... on PullRequest{title number url} ... on DraftIssue{title body}} fieldValues(first:20){nodes{... on ProjectV2ItemFieldTextValue{text field{... on ProjectV2Field{id name} ... on ProjectV2IterationField{id name} ... on ProjectV2MultiSelectField{id name} ... on ProjectV2SingleSelectField{id name}}} ... on ProjectV2ItemFieldNumberValue{number field{... on ProjectV2Field{id name} ... on ProjectV2IterationField{id name} ... on ProjectV2MultiSelectField{id name} ... on ProjectV2SingleSelectField{id name}}} ... on ProjectV2ItemFieldDateValue{date field{... on ProjectV2Field{id name} ... on ProjectV2IterationField{id name} ... on ProjectV2MultiSelectField{id name} ... on ProjectV2SingleSelectField{id name}}} ... on ProjectV2ItemFieldIterationValue{iterationId field{... on ProjectV2IterationField{id name}}} ... on ProjectV2ItemFieldSingleSelectValue{name optionId field{... on ProjectV2Field{id name} ... on ProjectV2IterationField{id name} ... on ProjectV2MultiSelectField{id name} ... on ProjectV2SingleSelectField{id name}}}} ... on ProjectV2ItemFieldMultiSelectValue{value options{id name color description} field{... on ProjectV2MultiSelectField{id name}}}}}}}}}}";
   const data = await graphql(query, { id: projectId, first });
   const items = data?.node?.items?.nodes;
   if (!Array.isArray(items)) {
@@ -473,7 +513,7 @@ function makeMcpServer(authContext) {
     }
   );
 
-  registerProjectManagementTools({ server, authContext, registerTool, graphql, resolveOwnerId, readProjectItems, findProjectItem });
+  registerProjectManagementTools({ server, authContext, registerTool, graphql, resolveOwnerId, resolveRepositoryId, readProjectItems, findProjectItem });
 
   return server;
 }
