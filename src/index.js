@@ -7,11 +7,11 @@ import { z } from "zod";
 import { registerProjectManagementTools } from "./project-management.js";
 
 const PORT = Number(process.env.PORT || 80);
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN || "";
 const DEFAULT_OWNER = process.env.GITHUB_OWNER;
 
-if (!GITHUB_TOKEN || !DEFAULT_OWNER) {
-  throw new Error("Configure GITHUB_TOKEN and GITHUB_OWNER.");
+if (!DEFAULT_OWNER) {
+  throw new Error("Configure GITHUB_OWNER.");
 }
 
 const oauth = createOAuth();
@@ -21,7 +21,7 @@ function bearerToken(req) {
   return value.slice(0, 7).toLowerCase() === "bearer " ? value.slice(7).trim() : "";
 }
 
-async function graphql(query, variables = {}) {
+async function githubGraphql(query, variables = {}, token = GITHUB_TOKEN) {
   const operation = query.match(/^(?:query|mutation)(?:\([^)]*\))?\{([A-Za-z0-9_]+)/)?.[1] || "unknown";
   const startedAt = Date.now();
 
@@ -31,7 +31,7 @@ async function graphql(query, variables = {}) {
     response = await fetch("https://api.github.com/graphql", {
       method: "POST",
       headers: {
-        Authorization: "Bearer " + GITHUB_TOKEN,
+        Authorization: "Bearer " + token,
         "Content-Type": "application/json",
         "User-Agent": "github-projects-bridge"
       },
@@ -73,10 +73,10 @@ async function graphql(query, variables = {}) {
   return payload.data;
 }
 
-async function githubRestJson(path) {
+async function githubRestJson(path, token = GITHUB_TOKEN) {
   const response = await fetch("https://api.github.com" + path, {
     headers: {
-      Authorization: "Bearer " + GITHUB_TOKEN,
+      Authorization: "Bearer " + token,
       Accept: "application/vnd.github+json",
       "User-Agent": "github-projects-bridge"
     }
@@ -88,13 +88,13 @@ async function githubRestJson(path) {
   return payload;
 }
 
-async function resolveRepositoryId(repositoryIdOrFullName) {
+async function resolveRepositoryId(repositoryIdOrFullName, token = GITHUB_TOKEN) {
   const value = String(repositoryIdOrFullName || "").trim();
   if (!value) throw new Error("repository_id must not be empty.");
   if (/^R_[A-Za-z0-9_-]+$/.test(value)) return value;
 
   if (/^\d+$/.test(value)) {
-    const repository = await githubRestJson("/repositories/" + encodeURIComponent(value));
+    const repository = await githubRestJson("/repositories/" + encodeURIComponent(value), token);
     if (!repository?.node_id) throw new Error("GitHub returned no node_id for repository " + value);
     return repository.node_id;
   }
@@ -104,7 +104,8 @@ async function resolveRepositoryId(repositoryIdOrFullName) {
   if (parts.length === 2 && parts[0] && parts[1]) {
     const data = await graphql(
       "query($owner:String!,$name:String!){repository(owner:$owner,name:$name){id nameWithOwner}}",
-      { owner: parts[0], name: parts[1] }
+      { owner: parts[0], name: parts[1] },
+      token
     );
     if (!data?.repository?.id) throw new Error("Repository not found: " + value);
     return data.repository.id;
@@ -113,18 +114,18 @@ async function resolveRepositoryId(repositoryIdOrFullName) {
   return value;
 }
 
-async function readProject(projectId) {
+async function readProject(projectId, apiGraphql = graphql) {
   const query = "query($id:ID!){node(id:$id){... on ProjectV2{id number title shortDescription url closed}}}";
-  const data = await graphql(query, { id: projectId });
+  const data = await apiGraphql(query, { id: projectId });
   if (!data?.node) {
     throw new Error("Project not found after GitHub API call: " + projectId);
   }
   return data.node;
 }
 
-async function readProjectItems(projectId, first = 100) {
+async function readProjectItems(projectId, first = 100, apiGraphql = graphql) {
   const query = "query($id:ID!,$first:Int!){node(id:$id){... on ProjectV2{items(first:$first){nodes{id type content{... on Issue{title number url} ... on PullRequest{title number url} ... on DraftIssue{title body}} fieldValues(first:20){nodes{... on ProjectV2ItemFieldTextValue{text field{... on ProjectV2Field{id name} ... on ProjectV2IterationField{id name} ... on ProjectV2MultiSelectField{id name} ... on ProjectV2SingleSelectField{id name}}} ... on ProjectV2ItemFieldNumberValue{number field{... on ProjectV2Field{id name} ... on ProjectV2IterationField{id name} ... on ProjectV2MultiSelectField{id name} ... on ProjectV2SingleSelectField{id name}}} ... on ProjectV2ItemFieldDateValue{date field{... on ProjectV2Field{id name} ... on ProjectV2IterationField{id name} ... on ProjectV2MultiSelectField{id name} ... on ProjectV2SingleSelectField{id name}}} ... on ProjectV2ItemFieldIterationValue{iterationId field{... on ProjectV2IterationField{id name}}} ... on ProjectV2ItemFieldSingleSelectValue{name optionId field{... on ProjectV2Field{id name} ... on ProjectV2IterationField{id name} ... on ProjectV2MultiSelectField{id name} ... on ProjectV2SingleSelectField{id name}}}}}}}}}}";
-  const data = await graphql(query, { id: projectId, first });
+  const data = await apiGraphql(query, { id: projectId, first });
   const items = data?.node?.items?.nodes;
   if (!Array.isArray(items)) {
     throw new Error("Project items could not be read after GitHub API call: " + projectId);
@@ -134,13 +135,13 @@ async function readProjectItems(projectId, first = 100) {
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-async function findProjectItemWithRetry(projectId, itemId, attempts = 5) {
+async function findProjectItemWithRetry(projectId, itemId, apiGraphql = graphql, attempts = 5) {
   const delays = [0, 250, 500, 1000, 2000];
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     if (delays[attempt] > 0) await sleep(delays[attempt]);
 
-    const items = await readProjectItems(projectId);
+    const items = await readProjectItems(projectId, 100, apiGraphql);
     const item = findProjectItem(items, itemId);
 
     console.log(
@@ -248,6 +249,18 @@ function registerTool(server, authContext, name, description, schema, handler) {
 }
 
 function makeMcpServer(authContext) {
+  const currentGithubToken = async () => {
+    const userToken = await oauth.getGithubAccessToken(authContext.claims);
+    const token = userToken || GITHUB_TOKEN;
+    if (!token) {
+      throw new Error("No GitHub access token is available. Reconnect the GitHub Projects Bridge app to authorize GitHub permissions.");
+    }
+    return token;
+  };
+  const graphql = async (query, variables = {}) => githubGraphql(query, variables, await currentGithubToken());
+  const githubRest = async (path) => githubRestJson(path, await currentGithubToken());
+  const resolveRepositoryIdForUser = async repositoryId => resolveRepositoryId(repositoryId, await currentGithubToken());
+
   const server = new McpServer({ name: "github-projects-bridge", version: "0.2.0" });
 
   registerTool(server, authContext,
@@ -306,7 +319,7 @@ function makeMcpServer(authContext) {
         }
       }
 
-      const verifiedProject = await readProject(createdProject.id);
+      const verifiedProject = await readProject(createdProject.id, graphql);
       if (verifiedProject.title !== title) {
         throw new Error(
           "Read-after-write verification failed for new project title. Expected " +
@@ -352,7 +365,7 @@ function makeMcpServer(authContext) {
       first: z.number().int().min(1).max(100).default(50)
     },
     async ({ project_id, first }) => {
-      const items = await readProjectItems(project_id, first);
+      const items = await readProjectItems(project_id, first, graphql);
       return { content: [{ type: "text", text: JSON.stringify(items, null, 2) }] };
     }
   );
@@ -379,7 +392,7 @@ function makeMcpServer(authContext) {
         throw new Error("GitHub returned no updated project for updateProjectV2.");
       }
 
-      const verifiedProject = await readProject(project_id);
+      const verifiedProject = await readProject(project_id, graphql);
       verifyProjectUpdate(verifiedProject, { title, short_description });
 
       console.log(
@@ -455,7 +468,7 @@ function makeMcpServer(authContext) {
         throw new Error("GitHub returned no project item for updateProjectV2ItemFieldValue.");
       }
 
-      const items = await readProjectItems(project_id);
+      const items = await readProjectItems(project_id, 100, graphql);
       const verifiedItem = findProjectItem(items, item_id);
       if (!verifiedItem) {
         throw new Error("Read-after-write verification failed: project item was not found.");
@@ -513,7 +526,7 @@ function makeMcpServer(authContext) {
     }
   );
 
-  registerProjectManagementTools({ server, authContext, registerTool, graphql, resolveOwnerId, resolveRepositoryId, readProjectItems, findProjectItem });
+  registerProjectManagementTools({ server, authContext, registerTool, graphql, resolveOwnerId, resolveRepositoryId: resolveRepositoryIdForUser, readProjectItems: (projectId, first = 100) => readProjectItems(projectId, first, graphql), findProjectItem });
 
   return server;
 }
