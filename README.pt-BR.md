@@ -36,8 +36,8 @@ Servidor remoto do [Model Context Protocol (MCP)](https://modelcontextprotocol.i
 
 1. Acesse [GitHub Developer Settings](https://github.com/settings/developers) → **OAuth Apps** → **New OAuth App**.
 2. No campo **Application name**, informe um nome para o bridge.
-3. No campo **Homepage URL**, informe o valor de `PUBLIC_URL` (por exemplo, `https://gpb.dev.perazza.com`). Não coloque o caminho `/oauth/github/callback` nesse campo.
-4. Na seção **Redirect URIs**, adicione exatamente `PUBLIC_URL/oauth/github/callback` (por exemplo, `https://gpb.dev.perazza.com/oauth/github/callback`). Esse é o endereço do endpoint do bridge que recebe o retorno do GitHub.
+3. No campo **Homepage URL**, informe o valor de `PUBLIC_URL` (por exemplo, `https://sua.url.com`). Não coloque o caminho `/oauth/github/callback` nesse campo.
+4. Na seção **Redirect URIs**, adicione exatamente `PUBLIC_URL/oauth/github/callback` (por exemplo, `https://sua.url.com/oauth/github/callback`). Esse é o endereço do endpoint do bridge que recebe o retorno do GitHub.
 5. Crie a aplicação, copie o Client ID e gere um Client Secret.
 6. Preencha `GITHUB_OAUTH_CLIENT_ID` e `GITHUB_OAUTH_CLIENT_SECRET`.
 7. Em `OAUTH_ALLOWED_GITHUB_USERS`, informe somente os logins que podem utilizar o bridge.
