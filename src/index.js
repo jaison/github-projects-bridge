@@ -7,7 +7,6 @@ import { z } from "zod";
 import { registerProjectManagementTools } from "./project-management.js";
 
 const PORT = Number(process.env.PORT || 80);
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN || "";
 const DEFAULT_OWNER = process.env.GITHUB_OWNER;
 
 if (!DEFAULT_OWNER) {
@@ -21,7 +20,7 @@ function bearerToken(req) {
   return value.slice(0, 7).toLowerCase() === "bearer " ? value.slice(7).trim() : "";
 }
 
-async function githubGraphql(query, variables = {}, token = GITHUB_TOKEN) {
+async function githubGraphql(query, variables = {}, token) {
   const operation = query.match(/^(?:query|mutation)(?:\([^)]*\))?\{([A-Za-z0-9_]+)/)?.[1] || "unknown";
   const startedAt = Date.now();
 
@@ -73,7 +72,7 @@ async function githubGraphql(query, variables = {}, token = GITHUB_TOKEN) {
   return payload.data;
 }
 
-async function githubRestJson(path, token = GITHUB_TOKEN) {
+async function githubRestJson(path, token) {
   const response = await fetch("https://api.github.com" + path, {
     headers: {
       Authorization: "Bearer " + token,
@@ -88,7 +87,7 @@ async function githubRestJson(path, token = GITHUB_TOKEN) {
   return payload;
 }
 
-async function resolveRepositoryId(repositoryIdOrFullName, token = GITHUB_TOKEN) {
+async function resolveRepositoryId(repositoryIdOrFullName, token) {
   const value = String(repositoryIdOrFullName || "").trim();
   if (!value) throw new Error("repository_id must not be empty.");
   if (/^R_[A-Za-z0-9_-]+$/.test(value)) return value;
@@ -250,8 +249,7 @@ function registerTool(server, authContext, name, description, schema, handler) {
 
 function makeMcpServer(authContext) {
   const currentGithubToken = async () => {
-    const userToken = await oauth.getGithubAccessToken(authContext.claims);
-    const token = userToken || GITHUB_TOKEN;
+    const token = await oauth.getGithubAccessToken(authContext.claims);
     if (!token) {
       throw new Error("No GitHub access token is available. Reconnect the GitHub Projects Bridge app to authorize GitHub permissions.");
     }
