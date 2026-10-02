@@ -235,7 +235,7 @@ export function createOAuth() {
       }
       const githubState = random();
       state.requests[githubState] = {
-        clientId, redirectUri, challenge, resource, scopes,
+        clientId, clientName: client.client_name, redirectUri, challenge, resource, scopes,
         state: oauthState,
         createdAt: now()
       };
