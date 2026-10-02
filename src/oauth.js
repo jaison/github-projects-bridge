@@ -1,4 +1,6 @@
 import {
+  createCipheriv,
+  createDecipheriv,
   createHmac,
   createHash,
   randomBytes,
@@ -9,6 +11,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
 const SCOPES = ["projects:read", "projects:write", "offline_access"];
+const GITHUB_SCOPES = ["read:user", "project", "repo", "read:org", "offline_access"];
 const now = () => Math.floor(Date.now() / 1000);
 const b64url = value => Buffer.from(value).toString("base64url");
 const hash = value => createHmac("sha256", "github-projects-bridge-oauth-store").update(value).digest("hex");
@@ -18,6 +21,33 @@ const safeEqual = (a, b) => {
   return left.length === right.length && timingSafeEqual(left, right);
 };
 const random = (bytes = 32) => randomBytes(bytes).toString("base64url");
+
+function deriveEncryptionKey(signingSecret, githubClientSecret) {
+  return createHash("sha256")
+    .update("github-projects-bridge-token-encryption\\0" + signingSecret + "\\0" + githubClientSecret)
+    .digest();
+}
+
+function encryptSecret(value, key) {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  const ciphertext = Buffer.concat([cipher.update(String(value), "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return {
+    iv: iv.toString("base64url"),
+    tag: tag.toString("base64url"),
+    ciphertext: ciphertext.toString("base64url")
+  };
+}
+
+function decryptSecret(record, key) {
+  const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(record.iv, "base64url"));
+  decipher.setAuthTag(Buffer.from(record.tag, "base64url"));
+  return Buffer.concat([
+    decipher.update(Buffer.from(record.ciphertext, "base64url")),
+    decipher.final()
+  ]).toString("utf8");
+}
 
 function json(res, status, value, headers = {}) {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...headers });
@@ -75,6 +105,7 @@ export function createOAuth() {
   const githubClientSecret = process.env.GITHUB_OAUTH_CLIENT_SECRET;
   const signingSecret = process.env.OAUTH_SIGNING_SECRET;
   const allowedUsers = new Set((process.env.OAUTH_ALLOWED_GITHUB_USERS || "").split(",").map(v => v.trim().toLowerCase()).filter(Boolean));
+  const encryptionKey = deriveEncryptionKey(signingSecret, githubClientSecret);
   const dataFile = resolve(process.env.OAUTH_DATA_FILE || "/data/oauth-state.json");
 
   if (!publicUrl || !publicUrl.startsWith("https://")) throw new Error("PUBLIC_URL must be the canonical HTTPS URL of this MCP server, without a trailing slash.");
@@ -88,7 +119,8 @@ export function createOAuth() {
     requests: {},
     consents: {},
     codes: {},
-    refreshTokens: {}
+    refreshTokens: {},
+    githubCredentials: {}
   };
 
   let writeQueue = Promise.resolve();
@@ -135,7 +167,7 @@ export function createOAuth() {
     };
   }
 
-  function issueAccessToken(username, clientId, scopes) {
+  function issueAccessToken(username, clientId, scopes, credentialId = null) {
     const issued = now();
     return signJwt({
       iss: publicUrl,
@@ -144,6 +176,7 @@ export function createOAuth() {
       client_id: clientId,
       scope: scopes.join(" "),
       scopes,
+      credential_id: credentialId,
       iat: issued,
       nbf: issued,
       exp: issued + 900,
@@ -151,10 +184,10 @@ export function createOAuth() {
     }, signingSecret);
   }
 
-  function issueRefreshToken(username, clientId, scopes) {
+  function issueRefreshToken(username, clientId, scopes, credentialId = null) {
     const token = random(48);
     state.refreshTokens[hash(token)] = {
-      username, clientId, scopes, expiresAt: now() + 60 * 60 * 24 * 30
+      username, clientId, scopes, credentialId, expiresAt: now() + 60 * 60 * 24 * 30
     };
     return token;
   }
@@ -245,7 +278,7 @@ export function createOAuth() {
       const githubUrl = new URL("https://github.com/login/oauth/authorize");
       githubUrl.searchParams.set("client_id", githubClientId);
       githubUrl.searchParams.set("redirect_uri", githubCallback);
-      githubUrl.searchParams.set("scope", "read:user");
+      githubUrl.searchParams.set("scope", GITHUB_SCOPES.join(" "));
       githubUrl.searchParams.set("state", githubState);
       res.writeHead(302, { location: githubUrl.toString(), "cache-control": "no-store" });
       res.end();
@@ -293,10 +326,21 @@ export function createOAuth() {
           res.end();
           return true;
         }
+        const credentialId = random();
+        state.githubCredentials[credentialId] = {
+          username: user.login,
+          accessToken: encryptSecret(tokenData.access_token, encryptionKey),
+          refreshToken: tokenData.refresh_token ? encryptSecret(tokenData.refresh_token, encryptionKey) : null,
+          expiresAt: tokenData.expires_in ? now() + Number(tokenData.expires_in) : null,
+          refreshExpiresAt: tokenData.refresh_token_expires_in ? now() + Number(tokenData.refresh_token_expires_in) : null,
+          scopes: typeof tokenData.scope === "string" ? tokenData.scope.split(/\s+/).filter(Boolean) : GITHUB_SCOPES,
+          createdAt: now(),
+          updatedAt: now()
+        };
         const consentId = random();
-        state.consents[consentId] = { ...request, username: user.login, createdAt: now() };
+        state.consents[consentId] = { ...request, username: user.login, credentialId, createdAt: now() };
         await persist();
-        const scopeText = request.scopes.join(", ");
+        const scopeText = GITHUB_SCOPES.join(", ");
         const nonce = random(18);
         html(res, 200, `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Autorizar GitHub Projects Bridge</title><body style="font:16px system-ui;max-width:560px;margin:10vh auto;padding:24px;color:#222"><h1>Autorizar acesso</h1><p>Conta GitHub: <strong>${escapeHtml(user.login)}</strong></p><p>Aplicativo: <strong>${escapeHtml(request.clientName)}</strong></p><p>O aplicativo solicita as permissões: <strong>${escapeHtml(scopeText)}</strong>.</p><form id="consent-form" method="post" action="/oauth/consent"><input type="hidden" name="consent_id" value="${consentId}"><button type="submit" name="decision" value="approve">Autorizar</button> <button type="submit" name="decision" value="deny">Negar</button><p id="submit-status" role="status" aria-live="polite" style="min-height:1.5em;color:#555"></p></form><script nonce="${nonce}">const form=document.getElementById("consent-form");const status=document.getElementById("submit-status");let submitted=false;form.addEventListener("submit",event=>{if(submitted){event.preventDefault();return;}submitted=true;const clicked=event.submitter;if(clicked){const decision=document.createElement("input");decision.type="hidden";decision.name="decision";decision.value=clicked.value;form.appendChild(decision);}for(const button of form.querySelectorAll("button")){button.disabled=true;button.style.opacity=".6";button.style.cursor="wait";}if(clicked){clicked.textContent=clicked.value==="approve"?"Processando autorização...":"Enviando...";}status.textContent="Aguarde, estamos concluindo a solicitação.";});</script></body></html>`, nonce);
       } catch {
@@ -362,8 +406,8 @@ export function createOAuth() {
           json(res, 400, { error: "invalid_grant" });
           return true;
         }
-        const accessToken = issueAccessToken(record.username, clientId, record.scopes);
-        const refreshToken = issueRefreshToken(record.username, clientId, record.scopes);
+        const accessToken = issueAccessToken(record.username, clientId, record.scopes, record.credentialId);
+        const refreshToken = issueRefreshToken(record.username, clientId, record.scopes, record.credentialId);
         await persist();
         json(res, 200, { access_token: accessToken, token_type: "Bearer", expires_in: 900, refresh_token: refreshToken, scope: record.scopes.join(" ") });
         return true;
@@ -377,8 +421,8 @@ export function createOAuth() {
           return true;
         }
         delete state.refreshTokens[key];
-        const accessToken = issueAccessToken(record.username, clientId, record.scopes);
-        const refreshToken = issueRefreshToken(record.username, clientId, record.scopes);
+        const accessToken = issueAccessToken(record.username, clientId, record.scopes, record.credentialId);
+        const refreshToken = issueRefreshToken(record.username, clientId, record.scopes, record.credentialId);
         await persist();
         json(res, 200, { access_token: accessToken, token_type: "Bearer", expires_in: 900, refresh_token: refreshToken, scope: record.scopes.join(" ") });
         return true;
@@ -387,6 +431,51 @@ export function createOAuth() {
       return true;
     }
     return false;
+  }
+
+  async function getGithubAccessToken(claims) {
+    const credentialId = claims?.credential_id;
+    if (!credentialId) return null;
+
+    const credential = state.githubCredentials[credentialId];
+    if (!credential?.accessToken) {
+      throw new Error("GitHub OAuth credential not found or expired. Reconnect the GitHub Projects Bridge app.");
+    }
+
+    if (credential.expiresAt && credential.expiresAt <= now() + 60 && credential.refreshToken) {
+      if (credential.refreshExpiresAt && credential.refreshExpiresAt <= now()) {
+        throw new Error("GitHub OAuth refresh token expired. Reconnect the GitHub Projects Bridge app.");
+      }
+
+      const refreshToken = decryptSecret(credential.refreshToken, encryptionKey);
+      const refreshResponse = await fetch("https://github.com/login/oauth/access_token", {
+        method: "POST",
+        headers: { accept: "application/json", "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: githubClientId,
+          client_secret: githubClientSecret,
+          grant_type: "refresh_token",
+          refresh_token: refreshToken
+        })
+      });
+      const refreshData = await refreshResponse.json();
+      if (!refreshResponse.ok || !refreshData.access_token) {
+        throw new Error("GitHub OAuth token refresh failed.");
+      }
+
+      credential.accessToken = encryptSecret(refreshData.access_token, encryptionKey);
+      credential.refreshToken = refreshData.refresh_token
+        ? encryptSecret(refreshData.refresh_token, encryptionKey)
+        : credential.refreshToken;
+      credential.expiresAt = refreshData.expires_in ? now() + Number(refreshData.expires_in) : null;
+      credential.refreshExpiresAt = refreshData.refresh_token_expires_in
+        ? now() + Number(refreshData.refresh_token_expires_in)
+        : credential.refreshExpiresAt;
+      credential.updatedAt = now();
+      await persist();
+    }
+
+    return decryptSecret(credential.accessToken, encryptionKey);
   }
 
   function escapeHtml(value) {
@@ -399,6 +488,8 @@ export function createOAuth() {
     verifyAccessToken(token) {
       return verifyJwt(token, signingSecret, publicUrl, publicUrl);
     },
-    requiredScopes: SCOPES
+    getGithubAccessToken,
+    requiredScopes: SCOPES,
+    githubScopes: GITHUB_SCOPES
   };
 }
