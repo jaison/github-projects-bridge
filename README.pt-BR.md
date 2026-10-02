@@ -6,12 +6,43 @@ Servidor remoto do [Model Context Protocol (MCP)](https://modelcontextprotocol.i
 
 ## Ferramentas e permissões
 
-| Ferramenta | Escopo |
-| --- | --- |
-| `list_projects`, `get_project`, `list_project_items` | `projects:read` |
-| `create_project`, `create_project_draft`, `update_project`, `update_project_single_select`, `delete_project_item` | `projects:write` |
+Todas as ferramentas de Projects V2 são expostas com os dois escopos OAuth: `projects:read` e `projects:write`. Isso mantém a autorização em uma única etapa de consentimento.
 
-`create_project` aceita `owner`, `owner_type`, `title` e `short_description` opcional. Como a criação de um GitHub Project V2 exige a node ID do usuário ou organização proprietária, o bridge resolve essa ID a partir do login, cria o projeto, aplica a descrição opcional e verifica o projeto criado com read-after-write.
+### Projetos
+
+`list_projects`, `create_project`, `create_project_advanced`, `get_project`, `get_project_details`, `update_project`, `update_project_settings`, `delete_project`, `copy_project`, `mark_project_as_template`, `unmark_project_as_template`.
+
+### Campos
+
+`list_project_fields`, `get_project_field`, `create_project_field`, `create_project_issue_field`, `update_project_field`, `add_project_field_option`, `update_project_field_option`, `delete_project_field_option`, `delete_project_field`.
+
+O bridge suporta campos customizados do Project V2 dos tipos DATE, ITERATION, MULTI_SELECT, NUMBER, SINGLE_SELECT e TEXT. Os helpers de opções leem a configuração existente e preservam os IDs das opções existentes ao alterar a lista.
+
+### Itens
+
+`list_project_items`, `list_project_items_advanced`, `add_project_item_by_id`, `create_project_draft`, `update_project_draft_issue`, `convert_project_draft_to_issue`, `update_project_single_select`, `update_project_item_field_value`, `clear_project_item_field`, `update_project_item_position`, `archive_project_item`, `unarchive_project_item`, `delete_project_item`.
+
+A listagem avançada suporta paginação, filtro por busca, estado arquivado e ordenação por posição.
+
+### Views
+
+`list_project_views`, `get_project_view`, `create_project_view`, `update_project_view`, `delete_project_view`.
+
+As views suportam layouts board, table e roadmap, filtros e configuração ordenada dos campos visíveis.
+
+### Status updates
+
+`list_project_status_updates`, `get_project_status_update`, `create_project_status_update`, `update_project_status_update`, `delete_project_status_update`.
+
+### Repositórios e times
+
+`list_project_repositories`, `link_project_repository`, `unlink_project_repository`, `list_project_teams`, `link_project_team`, `unlink_project_team`.
+
+### Colaboradores e workflows
+
+`update_project_collaborators` administra colaboradores do projeto e suas funções. Workflows podem ser consultados com `list_project_workflows` e `get_project_workflow`, e removidos com `delete_project_workflow`.
+
+O schema GraphQL atual do GitHub expõe exclusão de workflows, mas não mutations de criação ou atualização de workflows.
 
 ## Requisitos
 
