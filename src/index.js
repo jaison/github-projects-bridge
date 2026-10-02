@@ -4,6 +4,7 @@ import { createOAuth } from "./oauth.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
+import { registerProjectManagementTools } from "./project-management.js";
 
 const PORT = Number(process.env.PORT || 80);
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
@@ -207,7 +208,7 @@ function registerTool(server, authContext, name, description, schema, handler) {
 }
 
 function makeMcpServer(authContext) {
-  const server = new McpServer({ name: "github-projects-bridge", version: "0.1.0" });
+  const server = new McpServer({ name: "github-projects-bridge", version: "0.2.0" });
 
   registerTool(server, authContext,
     "list_projects",
@@ -471,6 +472,8 @@ function makeMcpServer(authContext) {
       return { content: [{ type: "text", text: JSON.stringify({ deletedItemId, verified: true }, null, 2) }] };
     }
   );
+
+  registerProjectManagementTools({ server, authContext, registerTool, graphql, resolveOwnerId, readProjectItems, findProjectItem });
 
   return server;
 }
