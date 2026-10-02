@@ -192,7 +192,6 @@ function makeMcpServer(authContext) {
       first: z.number().int().min(1).max(100).default(50)
     },
     async ({ project_id, first }) => {
-      const query = "query($id:ID!,$first:Int!){node(id:$id){... on ProjectV2{items(first:$first){nodes{id type content{... on Issue{title number url} ... on PullRequest{title number url} ... on DraftIssue{title body}} fieldValues(first:20){nodes{... on ProjectV2ItemFieldTextValue{text field{... on ProjectV2Field{id name} ... on ProjectV2IterationField{id name} ... on ProjectV2MultiSelectField{id name} ... on ProjectV2SingleSelectField{id name}}} ... on ProjectV2ItemFieldNumberValue{number field{... on ProjectV2Field{id name} ... on ProjectV2IterationField{id name} ... on ProjectV2MultiSelectField{id name} ... on ProjectV2SingleSelectField{id name}}} ... on ProjectV2ItemFieldDateValue{date field{... on ProjectV2Field{id name} ... on ProjectV2IterationField{id name} ... on ProjectV2MultiSelectField{id name} ... on ProjectV2SingleSelectField{id name}}} ... on ProjectV2ItemFieldSingleSelectValue{name optionId field{... on ProjectV2Field{id name} ... on ProjectV2IterationField{id name} ... on ProjectV2MultiSelectField{id name} ... on ProjectV2SingleSelectField{id name}}}}}}}}}}";
       const items = await readProjectItems(project_id, first);
       return { content: [{ type: "text", text: JSON.stringify(items, null, 2) }] };
     }
@@ -401,8 +400,13 @@ const httpServer = createServer(async (req, res) => {
     return;
   }
 
+  const mcpMethod = parsed?.method || "unknown";
+  const mcpTool = parsed?.params?.name || "-";
+  console.log("[GPB][MCP] method=%s tool=%s", mcpMethod, mcpTool);
+
   const claims = oauth.verifyAccessToken(bearerToken(req));
   if (!claims) {
+    console.warn("[GPB][Auth] rejected method=%s tool=%s reason=invalid_access_token", mcpMethod, mcpTool);
     const metadataUrl = oauth.publicUrl + "/.well-known/oauth-protected-resource";
     res.writeHead(401, {
       "content-type": "application/json",
@@ -417,6 +421,7 @@ const httpServer = createServer(async (req, res) => {
   let transport = sessionId ? transports.get(sessionId) : undefined;
   let authContext = sessionId ? transportAuth.get(sessionId) : undefined;
   if (transport && (transportSubjects.get(sessionId) !== claims.sub || transportClients.get(sessionId) !== claims.client_id)) {
+    console.warn("[GPB][Session] rejected method=%s tool=%s reason=session_identity_mismatch", mcpMethod, mcpTool);
     res.writeHead(404);
     res.end("Unknown MCP session");
     return;
@@ -427,6 +432,7 @@ const httpServer = createServer(async (req, res) => {
     transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       onsessioninitialized: id => {
+        console.log("[GPB][Session] initialized session=%s", id);
         transports.set(id, transport);
         transportSubjects.set(id, claims.sub);
         transportClients.set(id, claims.client_id);
@@ -446,6 +452,7 @@ const httpServer = createServer(async (req, res) => {
     await server.connect(transport);
   }
   if (!transport) {
+    console.warn("[GPB][Session] rejected method=%s tool=%s reason=missing_or_invalid_session", mcpMethod, mcpTool);
     res.writeHead(400);
     res.end("Bad Request: missing or invalid MCP session");
     return;
