@@ -24,8 +24,9 @@ function json(res, status, value, headers = {}) {
   res.end(JSON.stringify(value));
 }
 
-function html(res, status, value) {
-  res.writeHead(status, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'" });
+function html(res, status, value, nonce = "") {
+  const scriptPolicy = nonce ? `; script-src 'nonce-${nonce}'` : "";
+  res.writeHead(status, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'${scriptPolicy}; form-action 'self'; base-uri 'none'; frame-ancestors 'none'" });
   res.end(value);
 }
 
@@ -295,7 +296,8 @@ export function createOAuth() {
         state.consents[consentId] = { ...request, username: user.login, createdAt: now() };
         await persist();
         const scopeText = request.scopes.join(", ");
-        html(res, 200, `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Autorizar GitHub Projects Bridge</title><body style="font:16px system-ui;max-width:560px;margin:10vh auto;padding:24px;color:#222"><h1>Autorizar acesso</h1><p>Conta GitHub: <strong>${escapeHtml(user.login)}</strong></p><p>Aplicativo: <strong>${escapeHtml(request.clientName)}</strong></p><p>O aplicativo solicita as permissões: <strong>${escapeHtml(scopeText)}</strong>.</p><form method="post" action="/oauth/consent"><input type="hidden" name="consent_id" value="${consentId}"><button name="decision" value="approve">Autorizar</button> <button name="decision" value="deny">Negar</button></form></body></html>`);
+        const nonce = random(18);
+        html(res, 200, `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Autorizar GitHub Projects Bridge</title><body style="font:16px system-ui;max-width:560px;margin:10vh auto;padding:24px;color:#222"><h1>Autorizar acesso</h1><p>Conta GitHub: <strong>${escapeHtml(user.login)}</strong></p><p>Aplicativo: <strong>${escapeHtml(request.clientName)}</strong></p><p>O aplicativo solicita as permissões: <strong>${escapeHtml(scopeText)}</strong>.</p><form id="consent-form" method="post" action="/oauth/consent"><input type="hidden" name="consent_id" value="${consentId}"><button type="submit" name="decision" value="approve">Autorizar</button> <button type="submit" name="decision" value="deny">Negar</button><p id="submit-status" role="status" aria-live="polite" style="min-height:1.5em;color:#555"></p></form><script nonce="${nonce}">const form=document.getElementById("consent-form");const status=document.getElementById("submit-status");let submitted=false;form.addEventListener("submit",event=>{if(submitted){event.preventDefault();return;}submitted=true;const clicked=event.submitter;for(const button of form.querySelectorAll("button")){button.disabled=true;button.style.opacity=".6";button.style.cursor="wait";}if(clicked){clicked.textContent=clicked.value==="approve"?"Processando autorização...":"Enviando...";}status.textContent="Aguarde, estamos concluindo a solicitação.";});</script></body></html>`, nonce);
       } catch {
         html(res, 502, "<h1>Não foi possível autenticar com o GitHub. Tente novamente.</h1>");
       }
