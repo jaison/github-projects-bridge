@@ -28,13 +28,17 @@ function html(res, status, value) {
   res.end(value);
 }
 
-async function readForm(req) {
+async function readBody(req) {
   let body = "";
   for await (const chunk of req) {
     body += chunk;
     if (body.length > 32768) throw new Error("Request body too large");
   }
-  return new URLSearchParams(body);
+  return body;
+}
+
+async function readForm(req) {
+  return new URLSearchParams(await readBody(req));
 }
 
 function signJwt(payload, secret) {
@@ -170,17 +174,26 @@ export function createOAuth() {
     }
 
     if (req.method === "POST" && path === "/oauth/register") {
-      let form;
-      try { form = await readForm(req); } catch { json(res, 400, { error: "invalid_request" }); return true; }
       let input;
-      try { input = JSON.parse(form.get("unused") || "{}"); } catch { input = {}; }
-      // Dynamic Client Registration uses a JSON request body.
-      if (!input || Object.keys(input).length === 0) {
-        let raw = "";
-        // readForm has consumed the stream; clients must send JSON and are parsed below by the raw-body path.
-        json(res, 400, { error: "invalid_client_metadata", error_description: "Send a JSON registration request." });
+      try { input = JSON.parse(await readBody(req)); } catch { json(res, 400, { error: "invalid_client_metadata" }); return true; }
+      const redirects = input.redirect_uris;
+      if (!Array.isArray(redirects) || redirects.length < 1 || redirects.length > 10 ||
+          redirects.some(uri => typeof uri !== "string" || !(uri.startsWith("https://") || /^http:\/\/(localhost|127\\.0\\.0\\.1)(:\\d+)?\\//.test(uri)))) {
+        json(res, 400, { error: "invalid_redirect_uri" });
         return true;
       }
+      const clientId = randomUUID();
+      const client = {
+        client_id: clientId,
+        client_name: String(input.client_name || "MCP client").slice(0, 120),
+        redirect_uris: redirects,
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+        token_endpoint_auth_method: "none"
+      };
+      state.clients[clientId] = client;
+      await persist();
+      json(res, 201, { ...client, client_id_issued_at: now() });
       return true;
     }
 
@@ -301,8 +314,7 @@ export function createOAuth() {
         const record = state.codes[key];
         delete state.codes[key];
         const verifier = form.get("code_verifier") || "";
-        const computed = createHmac("sha256", "").update(verifier).digest("base64url");
-        const challenge = Buffer.from(verifier).length ? (await import("node:crypto")).createHash("sha256").update(verifier).digest("base64url") : "";
+        const challenge = verifier ? (await import("node:crypto")).createHash("sha256").update(verifier).digest("base64url") : "";
         if (!record || record.expiresAt < now() || record.clientId !== clientId || record.redirectUri !== form.get("redirect_uri") || !safeEqual(challenge, record.challenge)) {
           await persist();
           json(res, 400, { error: "invalid_grant" });
