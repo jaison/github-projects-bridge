@@ -48,14 +48,14 @@ O schema GraphQL atual do GitHub expõe exclusão de workflows, mas não mutatio
 
 - Node.js 22 ou Docker.
 - Uma GitHub OAuth App com autorização para solicitar `read:user`, `project`, `repo`, `read:org` e `offline_access`.
-- `GITHUB_TOKEN` é opcional e permanece apenas como fallback temporário para conexões antigas.
+- Não é necessário um Personal Access Token do GitHub no servidor; o bridge usa o token OAuth do usuário GitHub autenticado.
 - URL pública HTTPS e armazenamento persistente para os dados OAuth.
 
 ## Variáveis de ambiente
 
 | Variável | Obrigatória | Descrição |
 | --- | --- | --- |
-| `GITHUB_TOKEN` | Não | Fallback legado de token de serviço. Novas conexões OAuth usam o token do usuário GitHub autenticado. |
+
 | `GITHUB_OWNER` | Sim | Login do usuário ou organização proprietária dos projetos. |
 | `PUBLIC_URL` | Sim | URL HTTPS pública e canônica do MCP, sem barra final. |
 | `GITHUB_OAUTH_CLIENT_ID` | Sim | Client ID da GitHub OAuth App. |
@@ -93,7 +93,7 @@ Use o resultado em `OAUTH_SIGNING_SECRET`. Não reutilize o PAT do GitHub nem o 
 
 O bridge agora usa o access token OAuth do GitHub pertencente ao usuário autenticado para as chamadas GraphQL e REST. A credencial GitHub é criptografada antes de ser armazenada em `/data`, e os access tokens do MCP contêm apenas uma referência para essa credencial criptografada.
 
-Cada usuário autorizado, portanto, opera com suas próprias permissões do GitHub. Um `GITHUB_TOKEN` legado pode permanecer configurado durante a migração; ele é usado apenas quando uma sessão MCP antiga ainda não possui uma credencial OAuth do GitHub.
+Cada usuário autorizado opera apenas com suas próprias permissões do GitHub. Não existe fallback para PAT no servidor; após esta atualização, conexões antigas precisam autorizar o bridge novamente.
 
 O escopo mais amplo solicitado é `repo`, pois GitHub OAuth Apps não oferecem as permissões granulares de repositório disponíveis nos GitHub Apps. O GitHub documenta que `repo` concede acesso total aos repositórios e também permite administrar projetos pertencentes a organizações e associações de times. Para times, o bridge solicita adicionalmente `read:org` porque os campos de team do GraphQL do GitHub exigem esse escopo.
 
