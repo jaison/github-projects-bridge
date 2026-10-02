@@ -114,7 +114,7 @@ async function resolveRepositoryId(repositoryIdOrFullName, token = GITHUB_TOKEN)
   return value;
 }
 
-async function readProject(projectId, apiGraphql = graphql) {
+async function readProject(projectId, apiGraphql = githubGraphql) {
   const query = "query($id:ID!){node(id:$id){... on ProjectV2{id number title shortDescription url closed}}}";
   const data = await apiGraphql(query, { id: projectId });
   if (!data?.node) {
@@ -123,7 +123,7 @@ async function readProject(projectId, apiGraphql = graphql) {
   return data.node;
 }
 
-async function readProjectItems(projectId, first = 100, apiGraphql = graphql) {
+async function readProjectItems(projectId, first = 100, apiGraphql = githubGraphql) {
   const query = "query($id:ID!,$first:Int!){node(id:$id){... on ProjectV2{items(first:$first){nodes{id type content{... on Issue{title number url} ... on PullRequest{title number url} ... on DraftIssue{title body}} fieldValues(first:20){nodes{... on ProjectV2ItemFieldTextValue{text field{... on ProjectV2Field{id name} ... on ProjectV2IterationField{id name} ... on ProjectV2MultiSelectField{id name} ... on ProjectV2SingleSelectField{id name}}} ... on ProjectV2ItemFieldNumberValue{number field{... on ProjectV2Field{id name} ... on ProjectV2IterationField{id name} ... on ProjectV2MultiSelectField{id name} ... on ProjectV2SingleSelectField{id name}}} ... on ProjectV2ItemFieldDateValue{date field{... on ProjectV2Field{id name} ... on ProjectV2IterationField{id name} ... on ProjectV2MultiSelectField{id name} ... on ProjectV2SingleSelectField{id name}}} ... on ProjectV2ItemFieldIterationValue{iterationId field{... on ProjectV2IterationField{id name}}} ... on ProjectV2ItemFieldSingleSelectValue{name optionId field{... on ProjectV2Field{id name} ... on ProjectV2IterationField{id name} ... on ProjectV2MultiSelectField{id name} ... on ProjectV2SingleSelectField{id name}}}}}}}}}}";
   const data = await apiGraphql(query, { id: projectId, first });
   const items = data?.node?.items?.nodes;
@@ -135,7 +135,7 @@ async function readProjectItems(projectId, first = 100, apiGraphql = graphql) {
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-async function findProjectItemWithRetry(projectId, itemId, apiGraphql = graphql, attempts = 5) {
+async function findProjectItemWithRetry(projectId, itemId, apiGraphql = githubGraphql, attempts = 5) {
   const delays = [0, 250, 500, 1000, 2000];
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
