@@ -9,7 +9,9 @@ Servidor remoto do [Model Context Protocol (MCP)](https://modelcontextprotocol.i
 | Ferramenta | Escopo |
 | --- | --- |
 | `list_projects`, `get_project`, `list_project_items` | `projects:read` |
-| `create_project_draft`, `update_project`, `update_project_single_select`, `delete_project_item` | `projects:write` |
+| `create_project`, `create_project_draft`, `update_project`, `update_project_single_select`, `delete_project_item` | `projects:write` |
+
+`create_project` aceita `owner`, `owner_type`, `title` e `short_description` opcional. Como a criação de um GitHub Project V2 exige a node ID do usuário ou organização proprietária, o bridge resolve essa ID a partir do login, cria o projeto, aplica a descrição opcional e verifica o projeto criado com read-after-write.
 
 ## Requisitos
 
