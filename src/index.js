@@ -161,23 +161,30 @@ async function resolveOwnerId(owner, ownerType) {
   return ownerNode.id;
 }
 
+const REQUIRED_PROJECT_SCOPES = ["projects:read", "projects:write"];
+
 function registerTool(server, authContext, name, description, schema, handler) {
-  const scope = ["create_project", "create_project_draft", "update_project_single_select", "delete_project_item", "update_project"].includes(name)
-    ? "projects:write"
-    : "projects:read";
   server.registerTool(name, {
     description,
     inputSchema: z.object(schema),
-    _meta: { securitySchemes: [{ type: "oauth2", scopes: [scope] }] }
+    _meta: {
+      securitySchemes: [{
+        type: "oauth2",
+        scopes: REQUIRED_PROJECT_SCOPES
+      }]
+    }
   }, async (args, context) => {
     const claims = authContext.claims;
-    const allowed = claims && (claims.scopes.includes(scope) || (scope === "projects:read" && claims.scopes.includes("projects:write")));
+    const allowed = claims && REQUIRED_PROJECT_SCOPES.every(scope => claims.scopes.includes(scope));
     if (!allowed) {
       return {
-        content: [{ type: "text", text: "OAuth scope required: " + scope }],
+        content: [{ type: "text", text: "OAuth scopes required: " + REQUIRED_PROJECT_SCOPES.join(", ") }],
         isError: true,
         _meta: {
-          "mcp/www_authenticate": 'Bearer resource_metadata="' + oauth.publicUrl + '/.well-known/oauth-protected-resource", scope="' + scope + '"'
+          "mcp/www_authenticate":
+            'Bearer resource_metadata="' + oauth.publicUrl +
+            '/.well-known/oauth-protected-resource", scope="' +
+            REQUIRED_PROJECT_SCOPES.join(" ") + '"'
         }
       };
     }
@@ -522,7 +529,7 @@ const httpServer = createServer(async (req, res) => {
     res.writeHead(401, {
       "content-type": "application/json",
       "cache-control": "no-store",
-      "WWW-Authenticate": 'Bearer resource_metadata="' + metadataUrl + '", scope="projects:read"'
+      "WWW-Authenticate": 'Bearer resource_metadata="' + metadataUrl + '", scope="' + REQUIRED_PROJECT_SCOPES.join(" ") + '"'
     });
     res.end(JSON.stringify({ error: "unauthorized", error_description: "A valid OAuth access token is required." }));
     return;
