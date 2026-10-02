@@ -90,7 +90,7 @@ export function registerProjectManagementTools({
 
   registerTool(server, authContext,
     "create_project_advanced",
-    "Create a GitHub Project V2 and optionally link it to a repository or team.",
+    "Create a GitHub Project V2 and optionally link it to a repository or team. repository_id accepts a GitHub global node ID, numeric repository database ID, owner/name or GitHub repository URL.",
     {
       owner: z.string().optional(),
       owner_type: z.enum(["user","organization"]).default("user"),
@@ -683,7 +683,7 @@ export function registerProjectManagementTools({
 
   registerTool(server, authContext,
     "update_project_draft_issue",
-    "Update a Project V2 draft issue title, body and assignees.",
+    "Update a Project V2 draft issue title, body and assignees. draft_issue_id may be either the DraftIssue node ID or the ProjectV2Item node ID returned by create_project_draft.",
     {
       draft_issue_id: z.string(),
       title: z.string().optional(),
@@ -706,7 +706,7 @@ export function registerProjectManagementTools({
 
   registerTool(server, authContext,
     "convert_project_draft_to_issue",
-    "Convert a Project V2 draft issue item into a real GitHub Issue in a repository.",
+    "Convert a Project V2 draft issue item into a real GitHub Issue in a repository. repository_id accepts a global node ID, numeric repository database ID, owner/name or GitHub repository URL.",
     { item_id: z.string(), repository_id: z.string() },
     async ({ item_id, repository_id }) => {
       const query = "mutation($input:ConvertProjectV2DraftIssueItemToIssueInput!){convertProjectV2DraftIssueItemToIssue(input:$input){item{id type content{... on Issue{id title number url}}}}}";
@@ -839,7 +839,7 @@ export function registerProjectManagementTools({
 
   registerTool(server, authContext,
     "link_project_repository",
-    "Link a GitHub repository to a Project V2.",
+    "Link a GitHub repository to a Project V2. repository_id accepts a global node ID, numeric repository database ID, owner/name or GitHub repository URL.",
     { project_id: z.string(), repository_id: z.string() },
     async ({ project_id, repository_id }) => {
       const query = "mutation($input:LinkProjectV2ToRepositoryInput!){linkProjectV2ToRepository(input:$input){repository{id name nameWithOwner url}}}";
@@ -850,7 +850,7 @@ export function registerProjectManagementTools({
 
   registerTool(server, authContext,
     "unlink_project_repository",
-    "Unlink a GitHub repository from a Project V2.",
+    "Unlink a GitHub repository from a Project V2. repository_id accepts a global node ID, numeric repository database ID, owner/name or GitHub repository URL.",
     { project_id: z.string(), repository_id: z.string() },
     async ({ project_id, repository_id }) => {
       const query = "mutation($input:UnlinkProjectV2FromRepositoryInput!){unlinkProjectV2FromRepository(input:$input){repository{id name nameWithOwner url}}}";
