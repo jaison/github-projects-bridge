@@ -726,7 +726,7 @@ export function registerProjectManagementTools({
       if (title !== undefined) input.title = title;
       if (body !== undefined) input.body = body;
       if (assignee_ids !== undefined) input.assigneeIds = assignee_ids;
-      const query = "mutation($input:UpdateProjectV2DraftIssueInput!){updateProjectV2DraftIssue(input:$input){draftIssue{id title body assignees(first:100){nodes{... on User{id login}}}}}}";
+      const query = "mutation($input:UpdateProjectV2DraftIssueInput!){updateProjectV2DraftIssue(input:$input){draftIssue{id title body}}}";
       const data = await graphql(query, { input });
       return result(data?.updateProjectV2DraftIssue?.draftIssue);
     }
