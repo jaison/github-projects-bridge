@@ -48,14 +48,14 @@ The current GitHub GraphQL Projects schema exposes workflow deletion, but no wor
 
 - Node.js 22 or Docker.
 - A GitHub OAuth App with permission to request `read:user`, `project`, `repo`, `read:org` and `offline_access`.
-- A `GITHUB_TOKEN` is optional and is retained only as a temporary legacy fallback for existing connections.
+- No server-side GitHub Personal Access Token is required; the bridge uses the authenticated GitHub user OAuth token.
 - A public HTTPS URL and persistent storage for OAuth state.
 
 ## Environment variables
 
 | Variable | Required | Description |
 | --- | --- | --- |
-| `GITHUB_TOKEN` | No | Legacy service token fallback. New OAuth connections use the authenticated GitHub user token instead. |
+
 | `GITHUB_OWNER` | Yes | GitHub login of the user or organization that owns the projects. |
 | `PUBLIC_URL` | Yes | Canonical public HTTPS URL of this MCP server, without trailing slash. |
 | `GITHUB_OAUTH_CLIENT_ID` | Yes | GitHub OAuth App client ID. |
@@ -93,7 +93,7 @@ Set the result as `OAUTH_SIGNING_SECRET`. Do not reuse the GitHub PAT or OAuth C
 
 The bridge now uses the GitHub OAuth access token belonging to the authenticated user for GraphQL and REST calls. The GitHub credential is encrypted before being stored in `/data`, and MCP access tokens contain only a reference to that encrypted credential.
 
-This means each authorized user acts with their own GitHub permissions. A legacy `GITHUB_TOKEN` may remain configured during migration; it is used only when an older MCP session has no GitHub OAuth credential yet.
+Each authorized user acts only with their own GitHub permissions. There is no server-side PAT fallback: after this upgrade, users with an older connection must authorize the bridge again.
 
 The broadest requested scope is `repo`, because GitHub OAuth Apps do not expose the granular repository permissions available to GitHub Apps. GitHub documents that `repo` grants full access to repositories and also enables management of organization-owned projects and team memberships. For teams, this bridge additionally requests `read:org` because the GitHub GraphQL team fields require it.
 
