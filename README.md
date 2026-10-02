@@ -6,8 +6,6 @@ A remote [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server
 
 ## Features
 
-The server currently exposes these MCP tools:
-
 | Tool | Description |
 | --- | --- |
 | `list_projects` | List Projects V2 owned by a GitHub user or organization. |
@@ -17,7 +15,7 @@ The server currently exposes these MCP tools:
 | `update_project_single_select` | Set a single-select field value, such as Status or Priority. |
 | `delete_project_item` | Remove an item from a project. |
 
-The HTTP service provides:
+HTTP endpoints:
 
 - `GET /health` — health check.
 - `POST /mcp` — authenticated MCP Streamable HTTP endpoint.
@@ -25,8 +23,8 @@ The HTTP service provides:
 ## Requirements
 
 - Node.js 22 or Docker.
-- A GitHub fine-grained Personal Access Token (PAT).
-- A GitHub user or organization that owns the Projects V2 boards you want to manage.
+- A GitHub Personal Access Token (classic) with the `project` scope for Projects V2 boards owned by a personal GitHub account.
+- The GitHub user or organization that owns the projects.
 
 ## Configuration
 
@@ -36,39 +34,45 @@ Clone the repository and create your environment file:
 cp .env.example .env
 ```
 
-Set the following variables in `.env`:
-
 | Variable | Required | Description |
 | --- | --- | --- |
-| `GITHUB_TOKEN` | Yes | GitHub fine-grained PAT with **Projects: Read and write** permission. |
-| `MCP_ACCESS_TOKEN` | Yes | A strong, private secret used to authenticate requests to the MCP endpoint. |
+| `GITHUB_TOKEN` | Yes | GitHub Personal Access Token (classic) with the `project` scope (**Full control of projects**) for personal-account Projects V2. |
+| `MCP_ACCESS_TOKEN` | Yes | Strong, private secret used to authenticate requests to the MCP endpoint. |
 | `GITHUB_OWNER` | Yes | GitHub login of the user or organization that owns the projects. |
 | `PORT` | No | Internal HTTP port. Defaults to `3000`. |
 
-Generate a dedicated MCP access secret, for example:
+### Create the GitHub token
+
+For Projects V2 boards owned by a personal GitHub account:
+
+1. Open [GitHub token settings — Tokens (classic)](https://github.com/settings/tokens).
+2. Select **Generate new token (classic)**.
+3. Give it a descriptive name.
+4. Under **Select scopes**, enable `project` — **Full control of projects**. GitHub also selects `read:project`; this is expected.
+5. Generate the token and copy it. GitHub displays the token only once.
+
+Do not add the `repo` scope for project-board operations alone.
+
+Fine-grained personal access tokens currently cannot access Projects owned by a personal user account. For organization-owned Projects V2, fine-grained tokens support the organization-level **Projects** permission, subject to the organization's token policy and approval requirements.
+
+### Generate the MCP access secret
+
+Generate a separate secret for MCP authentication, for example:
 
 ```bash
 openssl rand -hex 32
 ```
 
-Keep the GitHub token and MCP access token separate. The values in `.env.example` are placeholders, not working credentials. Never commit `.env` or expose either token.
-
-### GitHub token permissions
-
-Create a fine-grained PAT under **GitHub → Settings → Developer settings → Personal access tokens**. Grant **Projects: Read and write** for the relevant account or organization. Organization-owned projects may require the organization owner's approval of the token.
-
-Use the minimum access scope needed for the projects you intend to manage.
+Keep the GitHub token and MCP access token separate. The values in `.env.example` are placeholders. Never commit `.env` or expose either token.
 
 ## Run locally
-
-Install dependencies and start the server:
 
 ```bash
 npm install
 npm start
 ```
 
-The server listens on `0.0.0.0:3000` by default. Check its health endpoint:
+The server listens on `0.0.0.0:3000` by default.
 
 ```bash
 curl http://localhost:3000/health
@@ -82,8 +86,6 @@ Expected response:
 
 ## Run with Docker
 
-Build and run the container, providing the environment variables from your deployment environment:
-
 ```bash
 docker build -t github-projects-bridge .
 docker run -d \
@@ -96,19 +98,12 @@ docker run -d \
 ## Deploy on Easypanel
 
 1. Create an **App** service connected to this GitHub repository.
-2. Choose **Dockerfile** as the build method and use the repository's root `Dockerfile`.
-3. Add the environment variables listed in the [Configuration](#configuration) section in the Easypanel service settings. Use real values; do not add a `.env` file to the repository.
-4. Set the internal service port to `3000` and attach a domain with HTTPS.
-5. Deploy the service.
-6. Verify that `https://YOUR-DOMAIN/health` returns the expected health-check response.
+2. Select **Dockerfile** as the build method and use the root `Dockerfile`.
+3. Add the environment variables listed above in the Easypanel service settings. Do not commit a `.env` file.
+4. Set the internal port to `3000` and attach a domain with HTTPS.
+5. Deploy and verify `https://YOUR-DOMAIN/health`.
 
-The MCP endpoint will be:
-
-```text
-https://YOUR-DOMAIN/mcp
-```
-
-Requests to `/mcp` must include this HTTP header:
+The MCP endpoint is `https://YOUR-DOMAIN/mcp`. Requests must include:
 
 ```http
 Authorization: Bearer YOUR_MCP_ACCESS_TOKEN
@@ -118,17 +113,15 @@ The health endpoint is public and does not require the MCP access token.
 
 ## Connect an MCP client
 
-Configure your MCP-compatible client to use the server's HTTPS `/mcp` URL and provide the access token using HTTP Bearer authentication. The client must support the MCP Streamable HTTP transport and custom authorization headers.
-
-Client setup varies by product and version. The GitHub connector built into a client does not automatically connect to this server; add this endpoint as a separate MCP server/connector where custom MCP connections are supported.
+Configure an MCP-compatible client to use the HTTPS `/mcp` URL and provide the access token using HTTP Bearer authentication. The client must support MCP Streamable HTTP and custom authorization headers.
 
 ## Security
 
 - Expose the service through an HTTPS reverse proxy; do not publish the container port directly to the internet.
-- Keep `GITHUB_TOKEN` and `MCP_ACCESS_TOKEN` private and use different values for them.
-- Limit the GitHub token to the required Projects permission and account scope.
-- Store secrets in the deployment platform's environment settings, not in source control.
-- Rotate both credentials if either one may have been exposed.
+- Keep `GITHUB_TOKEN` and `MCP_ACCESS_TOKEN` private and use different values.
+- For personal-account Projects V2, use only the classic PAT `project` scope; do not add `repo` unless another feature explicitly requires repository access.
+- Store secrets in deployment environment settings, not in source control.
+- Rotate both credentials if either may have been exposed.
 - Restrict access to the Easypanel project and its environment variables.
 
 ## License
