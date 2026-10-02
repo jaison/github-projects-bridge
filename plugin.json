@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "github-projects-bridge",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Gerencie GitHub Projects V2 diretamente por um cliente MCP.",
   "author": {
     "name": "Jaison",
@@ -10,7 +10,12 @@
   "homepage": "https://github.com/jaison/github-projects-bridge",
   "repository": "https://github.com/jaison/github-projects-bridge",
   "license": "MIT",
-  "keywords": ["github", "projects", "mcp", "developer-tools"],
+  "keywords": [
+    "github",
+    "projects",
+    "mcp",
+    "developer-tools"
+  ],
   "extensions": {
     "com.openai": {
       "interface": {
@@ -29,7 +34,9 @@
         "brandColor": "#24292F",
         "brandColorDark": "#8CB4FF",
         "composerIcon": "./assets/composer-icon.svg",
-        "logo": "./assets/logo.svg"
+        "logo": "./assets/logo.svg",
+        "logoDark": "./assets/logo.svg",
+        "composerIconDark": "./assets/composer-icon.svg"
       }
     }
   }
