@@ -35,11 +35,14 @@ Servidor remoto do [Model Context Protocol (MCP)](https://modelcontextprotocol.i
 ## Criar a GitHub OAuth App
 
 1. Acesse [GitHub Developer Settings](https://github.com/settings/developers) → **OAuth Apps** → **New OAuth App**.
-2. Informe a homepage URL usando o valor de `PUBLIC_URL`.
-3. Configure a **Authorization callback URL** exatamente como `PUBLIC_URL/oauth/github/callback`.
-4. Crie a aplicação, copie o Client ID e gere um Client Secret.
-5. Preencha `GITHUB_OAUTH_CLIENT_ID` e `GITHUB_OAUTH_CLIENT_SECRET`.
-6. Em `OAUTH_ALLOWED_GITHUB_USERS`, informe somente os logins que podem utilizar o bridge.
+2. No campo **Application name**, informe um nome para o bridge.
+3. No campo **Homepage URL**, informe o valor de `PUBLIC_URL` (por exemplo, `https://gpb.dev.perazza.com`). Não coloque o caminho `/oauth/github/callback` nesse campo.
+4. Na seção **Redirect URIs**, adicione exatamente `PUBLIC_URL/oauth/github/callback` (por exemplo, `https://gpb.dev.perazza.com/oauth/github/callback`). Esse é o endereço do endpoint do bridge que recebe o retorno do GitHub.
+5. Crie a aplicação, copie o Client ID e gere um Client Secret.
+6. Preencha `GITHUB_OAUTH_CLIENT_ID` e `GITHUB_OAUTH_CLIENT_SECRET`.
+7. Em `OAUTH_ALLOWED_GITHUB_USERS`, informe somente os logins que podem utilizar o bridge.
+
+**Não adicione o redirect URI do ChatGPT nessa seção do GitHub.** O ChatGPT é o cliente OAuth do servidor MCP: ele informa seu próprio `redirect_uri` ao endpoint de Dynamic Client Registration (`/oauth/register`), e o bridge valida e armazena esse endereço para a sessão. O redirect URI cadastrado na GitHub OAuth App é exclusivamente `PUBLIC_URL/oauth/github/callback`.
 
 O login solicita apenas o escopo `read:user` do GitHub. A autenticação OAuth e o token de serviço usado para acessar Projects V2 são credenciais distintas.
 
@@ -51,7 +54,7 @@ Gere um segredo forte com:
 openssl rand -hex 32
 ```
 
-Use o resultado em `OAUTH_SIGNING_SECRET). Não reutilize o PAT do GitHub nem o Client Secret OAuth.
+Use o resultado em `OAUTH_SIGNING_SECRET`. Não reutilize o PAT do GitHub nem o Client Secret OAuth.
 
 ## Token de serviço do GitHub
 
@@ -63,7 +66,7 @@ O `GITHUB_TOKEN` fica exclusivamente no servidor. O ChatGPT recebe um access tok
 
 O estado OAuth contém clientes registrados, códigos de autorização e refresh tokens (armazenados como hashes). Ele precisa sobreviver a reinicializações e redeploys.
 
-No Easypanel, monte um volume persistente em `/data). Esta implementação pressupõe uma única instância do serviço; não execute múltiplas réplicas independentes compartilhando o arquivo JSON.
+No Easypanel, monte um volume persistente em `/data`. Esta implementação pressupõe uma única instância do serviço; não execute múltiplas réplicas independentes compartilhando o arquivo JSON.
 
 ## Deploy no Easypanel
 
@@ -72,7 +75,7 @@ No Easypanel, monte um volume persistente em `/data). Esta implementação press
 3. Configure as variáveis de ambiente descritas acima.
 4. Configure a porta interna `80`, domínio e HTTPS.
 5. Monte um volume persistente em `/data`.
-6. Configure a callback URL da GitHub OAuth App como `https://SEU-DOMINIO/oauth/github/callback`.
+6. Confira na GitHub OAuth App: **Homepage URL** = `PUBLIC_URL`; **Redirect URI** = `PUBLIC_URL/oauth/github/callback`.
 7. Faça o deploy.
 
 ## Endpoints
@@ -86,7 +89,7 @@ No Easypanel, monte um volume persistente em `/data). Esta implementação press
 - `POST /oauth/token` — troca de authorization code e renovação de tokens.
 - `GET /oauth/github/callback` — callback de autenticação GitHub.
 
-Cadastre no ChatGPT o endereço `https://SEU-DOMINIO/mcp` e selecione OAuth como mecanismo de autenticação. O servidor anuncia os escopos `projects:read` e `projects:write`.
+Cadastre no ChatGPT o endereço `https://SEU-DOMINIO/mcp` e selecione OAuth como mecanismo de autenticação. O ChatGPT fornece seu redirect URI durante o registro dinâmico; não é necessário cadastrá-lo manualmente na GitHub OAuth App. O servidor anuncia os escopos `projects:read` e `projects:write`.
 
 ## Segurança e limitações
 
