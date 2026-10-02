@@ -241,9 +241,19 @@ export function createOAuth() {
       const githubState = url.searchParams.get("state") || "";
       const request = state.requests[githubState];
       delete state.requests[githubState];
-      if (!request || request.createdAt < now() - 600 || url.searchParams.has("error")) {
+      if (!request || request.createdAt < now() - 600) {
         await persist();
-        html(res, 400, "<h1>Autorização cancelada ou expirada.</h1>");
+        html(res, 400, "<h1>Autorização expirada. Feche esta janela e tente novamente.</h1>");
+        return true;
+      }
+      if (url.searchParams.has("error")) {
+        const denied = new URL(request.redirectUri);
+        denied.searchParams.set("error", "access_denied");
+        if (request.state) denied.searchParams.set("state", request.state);
+        denied.searchParams.set("iss", publicUrl);
+        await persist();
+        res.writeHead(302, { location: denied.toString(), "cache-control": "no-store" });
+        res.end();
         return true;
       }
       try {
