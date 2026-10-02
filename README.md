@@ -1,128 +1,101 @@
 # GitHub Projects Bridge
 
-A remote [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for managing GitHub Projects V2 through the GitHub GraphQL API. It exposes project discovery and item-management tools over Streamable HTTP and is designed to run as a small container, including on Easypanel.
+A remote [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for managing GitHub Projects V2 through the GitHub GraphQL API. It uses MCP Streamable HTTP and OAuth 2.1 Authorization Code with PKCE.
 
 **Documentation:** [Português (Brasil)](README.pt-BR.md)
 
-## Features
+## Tools and scopes
 
-| Tool | Description |
+| Tools | Scope |
 | --- | --- |
-| `list_projects` | List Projects V2 owned by a GitHub user or organization. |
-| `get_project` | Retrieve a project, including its fields and single-select options. |
-| `list_project_items` | List project items, their content, and supported field values. |
-| `create_project_draft` | Create a draft issue card in a project. |
-| `update_project_single_select` | Set a single-select field value, such as Status or Priority. |
-| `delete_project_item` | Remove an item from a project. |
-
-HTTP endpoints:
-
-- `GET /health` — health check.
-- `POST /mcp` — authenticated MCP Streamable HTTP endpoint.
+| `list_projects`, `get_project`, `list_project_items` | `projects:read` |
+| `create_project_draft`, `update_project_single_select`, `delete_project_item` | `projects:write` |
 
 ## Requirements
 
 - Node.js 22 or Docker.
-- A GitHub Personal Access Token (classic) with the `project` scope for Projects V2 boards owned by a personal GitHub account.
-- The GitHub user or organization that owns the projects.
+- A GitHub Personal Access Token (classic) with the `project` scope for personal-account Projects V2.
+- A GitHub OAuth App.
+- A public HTTPS URL and persistent storage for OAuth state.
 
-## Configuration
-
-Clone the repository and create your environment file:
-
-```bash
-cp .env.example .env
-```
+## Environment variables
 
 | Variable | Required | Description |
 | --- | --- | --- |
-| `GITHUB_TOKEN` | Yes | GitHub Personal Access Token (classic) with the `project` scope (**Full control of projects**) for personal-account Projects V2. |
-| `MCP_ACCESS_TOKEN` | Yes | Strong, private secret used to authenticate requests to the MCP endpoint. |
+| `GITHUB_TOKEN` | Yes | Classic PAT with `project` (**Full control of projects**), used by the server for GraphQL calls. |
 | `GITHUB_OWNER` | Yes | GitHub login of the user or organization that owns the projects. |
+| `PUBLIC_URL` | Yes | Canonical public HTTPS URL of this MCP server, without trailing slash. |
+| `GITHUB_OAUTH_CLIENT_ID` | Yes | GitHub OAuth App client ID. |
+| `GITHUB_OAUTH_CLIENT_SECRET` | Yes | GitHub OAuth App client secret. |
+| `OAUTH_ALLOWED_GITHUB_USERS` | Yes | Comma-separated GitHub logins allowed to use the bridge. |
+| `OAUTH_SIGNING_SECRET` | Yes | Random secret of at least 32 characters used to sign access tokens. |
+| `OAUTH_DATA_FILE` | No | Persistent OAuth state file. Defaults to `/data/oauth-state.json`. |
 | `PORT` | No | Internal HTTP port. Defaults to `80`. |
 
-### Create the GitHub token
+## Create the GitHub OAuth App
 
-For Projects V2 boards owned by a personal GitHub account:
+1. Open [GitHub Developer Settings](https://github.com/settings/developers) → **OAuth Apps** → **New OAuth App**.
+2. Set the homepage URL to the value of `PUBLIC_URL`.
+3. Set the **Authorization callback URL** to exactly `PUBLIC_URL/oauth/github/callback`.
+4. Create the app, copy its Client ID, and generate a Client Secret.
+5. Set `GITHUB_OAUTH_CLIENT_ID` and `GITHUB_OAUTH_CLIENT_SECRET`.
+6. Set `OAUTH_ALLOWED_GITHUB_USERS` to only the GitHub logins allowed to use the bridge.
 
-1. Open [GitHub token settings — Tokens (classic)](https://github.com/settings/tokens).
-2. Select **Generate new token (classic)**.
-3. Give it a descriptive name.
-4. Under **Select scopes**, enable `project` — **Full control of projects**. GitHub also selects `read:project`; this is expected.
-5. Generate the token and copy it. GitHub displays the token only once.
+The login flow requests only GitHub's `read:user` scope. OAuth login and the service token used for Projects V2 are separate credentials.
 
-Do not add the `repo` scope for project-board operations alone.
+## Generate the signing secret
 
-Fine-grained personal access tokens currently cannot access Projects owned by a personal user account. For organization-owned Projects V2, fine-grained tokens support the organization-level **Projects** permission, subject to the organization's token policy and approval requirements.
-
-### Generate the MCP access secret
-
-Generate a separate secret for MCP authentication, for example:
+Generate a strong secret:
 
 ```bash
 openssl rand -hex 32
 ```
 
-Keep the GitHub token and MCP access token separate. The values in `.env.example` are placeholders. Never commit `.env` or expose either token.
+Set the result as `OAUTH_SIGNING_SECRET`. Do not reuse the GitHub PAT or OAuth Client Secret.
 
-## Run locally
+## GitHub service token
 
-```bash
-npm install
-npm start
-```
+For Projects V2 owned by a personal GitHub account, create a classic Personal Access Token with the `project` scope — **Full control of projects**. Do not add `repo` solely for project-board operations.
 
-The server listens on `0.0.0.0:80` by default.
+`GITHUB_TOKEN` stays on the server. ChatGPT receives an OAuth access token issued by this bridge, never the PAT. All authorized users operate with the permissions of this service token.
 
-```bash
-curl http://localhost:80/health
-```
+## Persistence
 
-Expected response:
+OAuth state includes registered clients, authorization codes, and hashed refresh tokens. It must survive restarts and redeployments.
 
-```json
-{"ok":true,"service":"github-projects-bridge"}
-```
+On Easypanel, mount a persistent volume at `/data`. This implementation assumes a single service instance; do not run multiple independent replicas sharing the JSON file.
 
-## Run with Docker
+## Easypanel deployment
 
-```bash
-docker build -t github-projects-bridge .
-docker run -d \
-  --name github-projects-bridge \
-  -p 80:80 \
-  --env-file .env \
-  github-projects-bridge
-```
+1. Create an **App** service connected to this repository.
+2. Select **Dockerfile** as the build method.
+3. Configure the environment variables above.
+4. Set internal port `80`, domain, and HTTPS.
+5. Mount a persistent volume at `/data`.
+6. Set the GitHub OAuth App callback URL to `https://YOUR-DOMAIN/oauth/github/callback`.
+7. Deploy.
 
-## Deploy on Easypanel
+## Endpoints
 
-1. Create an **App** service connected to this GitHub repository.
-2. Select **Dockerfile** as the build method and use the root `Dockerfile`.
-3. Add the environment variables listed above in the Easypanel service settings. Do not commit a `.env` file.
-4. Set the internal port to `80` and attach a domain with HTTPS.
-5. Deploy and verify `https://YOUR-DOMAIN/health`.
+- `GET /health` — public health check.
+- `POST /mcp` — OAuth-protected MCP Streamable HTTP endpoint.
+- `GET /.well-known/oauth-protected-resource` — resource-server metadata.
+- `GET /.well-known/oauth-authorization-server` — authorization-server metadata.
+- `POST /oauth/register` — Dynamic Client Registration.
+- `GET /oauth/authorize` — Authorization Code + PKCE entry point.
+- `POST /oauth/token` — authorization-code exchange and token refresh.
+- `GET /oauth/github/callback` — GitHub authentication callback.
 
-The MCP endpoint is `https://YOUR-DOMAIN/mcp`. Requests must include:
+Register `https://YOUR-DOMAIN/mcp` in ChatGPT and select OAuth as the authentication method. The server advertises the `projects:read` and `projects:write` scopes.
 
-```http
-Authorization: Bearer YOUR_MCP_ACCESS_TOKEN
-```
+## Security and limitations
 
-The health endpoint is public and does not require the MCP access token.
-
-## Connect an MCP client
-
-Configure an MCP-compatible client to use the HTTPS `/mcp` URL and provide the access token using HTTP Bearer authentication. The client must support MCP Streamable HTTP and custom authorization headers.
-
-## Security
-
-- Expose the service through an HTTPS reverse proxy; do not publish the container port directly to the internet.
-- Keep `GITHUB_TOKEN` and `MCP_ACCESS_TOKEN` private and use different values.
-- For personal-account Projects V2, use only the classic PAT `project` scope; do not add `repo` unless another feature explicitly requires repository access.
-- Store secrets in deployment environment settings, not in source control.
-- Rotate both credentials if either may have been exposed.
-- Restrict access to the Easypanel project and its environment variables.
+- Use HTTPS and keep the service behind a reverse proxy.
+- Restrict `OAUTH_ALLOWED_GITHUB_USERS` to users who should access these projects.
+- Protect the `/data` volume and environment variables.
+- Access tokens expire after 15 minutes; refresh tokens rotate and expire after 30 days.
+- JSON-file state is designed for a single instance. For high availability or multiple replicas, migrate state to a shared database.
+- OAuth enables authentication, but availability of write tools also depends on ChatGPT plan permissions.
 
 ## License
 
