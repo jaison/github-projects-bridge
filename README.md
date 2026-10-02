@@ -9,7 +9,9 @@ A remote [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server
 | Tools | Scope |
 | --- | --- |
 | `list_projects`, `get_project`, `list_project_items` | `projects:read` |
-| `create_project_draft`, `update_project`, `update_project_single_select`, `delete_project_item` | `projects:write` |
+| `create_project`, `create_project_draft`, `update_project`, `update_project_single_select`, `delete_project_item` | `projects:write` |
+
+`create_project` accepts `owner`, `owner_type`, `title`, and optional `short_description`. GitHub Projects V2 creation requires the node ID of the user or organization owner; the bridge resolves it from the login, creates the project, applies the optional short description, and verifies the resulting project with a read-after-write check.
 
 ## Requirements
 
