@@ -4,7 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 
-const PORT = Number(process.env.PORT || 3000);
+const PORT = Number(process.env.PORT || 80);
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const MCP_ACCESS_TOKEN = process.env.MCP_ACCESS_TOKEN;
 const DEFAULT_OWNER = process.env.GITHUB_OWNER;
