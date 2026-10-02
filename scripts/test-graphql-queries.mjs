@@ -26,7 +26,7 @@ const readQuery = extractReadProjectItemsQuery(index);
 assert.equal(balanced(readQuery), true, "readProjectItems GraphQL query must be balanced");
 assert.match(
   management,
-  /updateProjectV2DraftIssue\\(input:\\$input\\)\\{draftIssue\\{id title body\\}\\}/,
+  /updateProjectV2DraftIssue\(input:\$input\)\{draftIssue\{id title body\}\}/,
   "draft issue mutation should use a minimal response selection"
 );
 
