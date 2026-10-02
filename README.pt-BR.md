@@ -1,12 +1,10 @@
 # GitHub Projects Bridge
 
-Servidor remoto do [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) para gerenciar GitHub Projects V2 por meio da API GraphQL do GitHub. Disponibiliza ferramentas para localizar projetos e gerenciar seus cards via Streamable HTTP. Foi projetado para executar em um contêiner leve, inclusive no Easypanel.
+Servidor remoto do [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) para gerenciar GitHub Projects V2 por meio da API GraphQL do GitHub. Disponibiliza ferramentas para localizar projetos e gerenciar seus cards via Streamable HTTP, podendo ser executado em um contêiner leve ou no Easypanel.
 
 **Documentação:** [English](README.md)
 
 ## Recursos
-
-Atualmente, o servidor disponibiliza estas ferramentas MCP:
 
 | Ferramenta | Descrição |
 | --- | --- |
@@ -17,7 +15,7 @@ Atualmente, o servidor disponibiliza estas ferramentas MCP:
 | `update_project_single_select` | Define o valor de um campo de seleção única, como Status ou Prioridade. |
 | `delete_project_item` | Remove um item de um projeto. |
 
-O serviço HTTP disponibiliza:
+Endpoints HTTP:
 
 - `GET /health` — verificação de saúde do serviço.
 - `POST /mcp` — endpoint MCP Streamable HTTP autenticado.
@@ -25,8 +23,8 @@ O serviço HTTP disponibiliza:
 ## Requisitos
 
 - Node.js 22 ou Docker.
-- Um GitHub fine-grained Personal Access Token (PAT).
-- Um usuário ou organização do GitHub proprietário dos Projects V2 que serão gerenciados.
+- Um GitHub Personal Access Token (classic) com o escopo `project` para Projects V2 pertencentes a uma conta pessoal do GitHub.
+- O usuário ou organização do GitHub proprietário dos projetos.
 
 ## Configuração
 
@@ -36,39 +34,45 @@ Clone o repositório e crie o arquivo de ambiente:
 cp .env.example .env
 ```
 
-Configure as seguintes variáveis no arquivo `.env`:
-
 | Variável | Obrigatória | Descrição |
 | --- | --- | --- |
-| `GITHUB_TOKEN` | Sim | GitHub fine-grained PAT com permissão **Projects: Read and write**. |
-| `MCP_ACCESS_TOKEN` | Sim | Segredo forte e privado usado para autenticar as chamadas ao endpoint MCP. |
-| `GITHUB_OWNER` | Sim | Login do usuário ou da organização do GitHub proprietária dos projetos. |
+| `GITHUB_TOKEN` | Sim | Personal Access Token (classic) com o escopo `project` (**Full control of projects**) para Projects V2 de conta pessoal. |
+| `MCP_ACCESS_TOKEN` | Sim | Segredo forte e privado usado para autenticar chamadas ao endpoint MCP. |
+| `GITHUB_OWNER` | Sim | Login do usuário ou organização do GitHub proprietária dos projetos. |
 | `PORT` | Não | Porta HTTP interna. O padrão é `3000`. |
 
-Gere um segredo exclusivo para o acesso MCP. Por exemplo:
+### Como gerar o token do GitHub
+
+Para Projects V2 pertencentes a uma conta pessoal do GitHub:
+
+1. Acesse [Configurações de tokens do GitHub — Tokens (classic)](https://github.com/settings/tokens).
+2. Selecione **Generate new token (classic)**.
+3. Informe um nome descritivo.
+4. Em **Select scopes**, marque `project` — **Full control of projects**. O GitHub também marcará `read:project` automaticamente; isso é esperado.
+5. Gere o token e copie-o. O GitHub exibe o valor apenas uma vez.
+
+Não marque o escopo `repo` apenas para administrar quadros de projetos.
+
+Atualmente, tokens fine-grained não conseguem acessar Projects pertencentes a uma conta pessoal. Para Projects V2 de organizações, tokens fine-grained oferecem a permissão **Projects** no nível da organização, sujeitos à política de tokens e às exigências de aprovação da organização.
+
+### Gerar o segredo de acesso MCP
+
+Gere um segredo separado para autenticar o MCP. Por exemplo:
 
 ```bash
 openssl rand -hex 32
 ```
 
-Mantenha o token do GitHub separado do token de acesso MCP. Os valores de `.env.example` são apenas exemplos, não são credenciais funcionais. Nunca versione o arquivo `.env` nem exponha qualquer um dos tokens.
-
-### Permissões do token GitHub
-
-Crie um fine-grained PAT em **GitHub → Settings → Developer settings → Personal access tokens**. Conceda a permissão **Projects: Read and write** para a conta ou organização relevante. Projetos pertencentes a organizações podem exigir aprovação do token pelo administrador da organização.
-
-Conceda somente o escopo mínimo necessário para os projetos que serão gerenciados.
+Mantenha o token do GitHub separado do token de acesso MCP. Os valores de `.env.example` são apenas exemplos. Nunca versione o arquivo `.env` nem exponha qualquer um dos tokens.
 
 ## Execução local
-
-Instale as dependências e inicie o servidor:
 
 ```bash
 npm install
 npm start
 ```
 
-Por padrão, o servidor escuta em `0.0.0.0:3000`. Verifique o endpoint de saúde:
+Por padrão, o servidor escuta em `0.0.0.0:3000`.
 
 ```bash
 curl http://localhost:3000/health
@@ -82,8 +86,6 @@ Resposta esperada:
 
 ## Execução com Docker
 
-Crie a imagem e execute o contêiner, fornecendo as variáveis de ambiente configuradas no seu ambiente de deploy:
-
 ```bash
 docker build -t github-projects-bridge .
 docker run -d \
@@ -96,37 +98,28 @@ docker run -d \
 ## Deploy no Easypanel
 
 1. Crie um serviço do tipo **App** conectado a este repositório do GitHub.
-2. Selecione **Dockerfile** como método de build e utilize o `Dockerfile` localizado na raiz do repositório.
-3. Cadastre nas configurações do serviço do Easypanel as variáveis descritas na seção [Configuração](#configuração). Informe os valores reais; não adicione um arquivo `.env` ao repositório.
-4. Configure a porta interna do serviço como `3000` e associe um domínio com HTTPS.
-5. Faça o deploy.
-6. Verifique se `https://SEU-DOMINIO/health` retorna a resposta esperada.
+2. Selecione **Dockerfile** como método de build e utilize o Dockerfile da raiz.
+3. Cadastre as variáveis de ambiente listadas acima nas configurações do serviço. Não versione um arquivo `.env`.
+4. Configure a porta interna como `3000` e associe um domínio com HTTPS.
+5. Faça o deploy e verifique `https://SEU-DOMINIO/health`.
 
-O endpoint MCP será:
-
-```text
-https://SEU-DOMINIO/mcp
-```
-
-As requisições para `/mcp` devem incluir o seguinte cabeçalho HTTP:
+O endpoint MCP será `https://SEU-DOMINIO/mcp`. As requisições devem incluir:
 
 ```http
 Authorization: Bearer SEU_MCP_ACCESS_TOKEN
 ```
 
-O endpoint de saúde é público e não exige o token de acesso MCP.
+O endpoint de saúde é público e não exige o token MCP.
 
 ## Conectar um cliente MCP
 
-Configure seu cliente compatível com MCP para utilizar a URL HTTPS `/mcp` do servidor e forneça o token de acesso por meio de autenticação HTTP Bearer. O cliente precisa oferecer suporte ao transporte MCP Streamable HTTP e a cabeçalhos de autorização personalizados.
-
-A configuração varia conforme o produto e sua versão. O conector GitHub nativo de um cliente não se conecta automaticamente a este servidor: adicione o endpoint como um servidor/conector MCP separado, em clientes que permitam conexões MCP personalizadas.
+Configure seu cliente compatível com MCP para utilizar a URL HTTPS `/mcp` e forneça o token de acesso por meio de autenticação HTTP Bearer. O cliente precisa oferecer suporte ao transporte MCP Streamable HTTP e a cabeçalhos de autorização personalizados.
 
 ## Segurança
 
 - Exponha o serviço por meio de um proxy reverso com HTTPS; não publique diretamente a porta do contêiner na internet.
 - Mantenha `GITHUB_TOKEN` e `MCP_ACCESS_TOKEN` privados e utilize valores diferentes.
-- Restrinja o token GitHub à permissão Projects necessária e ao escopo de conta adequado.
+- Para Projects V2 de uma conta pessoal, utilize somente o escopo `project` do token clássico; não adicione `repo` a menos que outra funcionalidade exija acesso a repositórios.
 - Armazene os segredos nas configurações de ambiente da plataforma de deploy, não no controle de versão.
 - Altere as duas credenciais caso exista suspeita de exposição.
 - Restrinja o acesso ao projeto Easypanel e às respectivas variáveis de ambiente.
