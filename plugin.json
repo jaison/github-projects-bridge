@@ -1,16 +1,35 @@
 {
-  "schema_version": "v1",
-  "name_for_human": "GitHub Projects Bridge",
-  "name_for_model": "github-projects-bridge",
-  "description_for_human": "Conecte o ChatGPT aos seus projetos do GitHub.",
-  "description_for_model": "Gerencie GitHub Projects V2, itens, rascunhos, campos e metadados através de um servidor MCP seguro.",
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "github-projects-bridge",
+  "version": "0.2.1",
+  "description": "Gerencie GitHub Projects V2 diretamente por um cliente MCP.",
+  "author": {
+    "name": "Jaison",
+    "url": "https://github.com/jaison"
+  },
+  "homepage": "https://github.com/jaison/github-projects-bridge",
+  "repository": "https://github.com/jaison/github-projects-bridge",
+  "license": "MIT",
+  "keywords": ["github", "projects", "mcp", "developer-tools"],
   "extensions": {
     "com.openai": {
       "interface": {
+        "displayName": "GitHub Projects Bridge",
+        "shortDescription": "Gerencie seus GitHub Projects",
+        "longDescription": "Conecte o ChatGPT aos seus GitHub Projects V2 através de um servidor MCP. Crie e gerencie projetos, itens, rascunhos, campos e metadados usando o GitHub.",
+        "developerName": "Jaison",
+        "category": "Developer Tools",
+        "capabilities": [
+          "Listar e consultar projetos",
+          "Gerenciar itens e rascunhos",
+          "Administrar campos e opções"
+        ],
+        "websiteURL": "https://github.com/jaison/github-projects-bridge",
+        "supportURL": "https://github.com/jaison/github-projects-bridge/issues",
         "brandColor": "#24292F",
-        "brandColorDark": "#FFFFFF",
-        "logo": "./assets/logo.svg",
-        "composerIcon": "./assets/logo.svg"
+        "brandColorDark": "#8CB4FF",
+        "composerIcon": "./assets/composer-icon.svg",
+        "logo": "./assets/logo.svg"
       }
     }
   }
