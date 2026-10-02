@@ -40,3 +40,5 @@ assert.match(oauthSource(), /credential_id: credentialId/, "Issued MCP access to
 assert.match(oauthSource(), /createCipheriv\("aes-256-gcm"/, "GitHub OAuth credentials should be encrypted at rest");
 
 console.log("GraphQL regression checks passed.");
+
+assert.doesNotMatch(index, /GITHUB_TOKEN/, "GitHub API access should not fall back to a server-side PAT");
