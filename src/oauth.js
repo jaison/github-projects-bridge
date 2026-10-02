@@ -217,14 +217,26 @@ export function createOAuth() {
       const resource = url.searchParams.get("resource");
       const scopes = (url.searchParams.get("scope") || "projects:read").split(/\s+/).filter(Boolean);
       const client = validClient(clientId, redirectUri);
-      if (!client || responseType !== "code" || !challenge || challengeMethod !== "S256" || resource !== publicUrl || scopes.some(s => !SCOPES.includes(s))) {
-        json(res, 400, { error: "invalid_request", error_description: "Invalid client, redirect URI, resource, scope, or PKCE parameters." });
+      if (!client) {
+        json(res, 400, { error: "invalid_client" });
+        return true;
+      }
+      const oauthState = url.searchParams.get("state") || "";
+      if (responseType !== "code" || !challenge || !/^[A-Za-z0-9_-]{43,128}$/.test(challenge) ||
+          challengeMethod !== "S256" || resource !== publicUrl || !oauthState || scopes.length === 0 ||
+          scopes.some(s => !SCOPES.includes(s))) {
+        const denied = new URL(redirectUri);
+        denied.searchParams.set("error", "invalid_request");
+        if (oauthState) denied.searchParams.set("state", oauthState);
+        denied.searchParams.set("iss", publicUrl);
+        res.writeHead(302, { location: denied.toString(), "cache-control": "no-store" });
+        res.end();
         return true;
       }
       const githubState = random();
       state.requests[githubState] = {
         clientId, redirectUri, challenge, resource, scopes,
-        state: url.searchParams.get("state") || "",
+        state: oauthState,
         createdAt: now()
       };
       await persist();
@@ -341,7 +353,7 @@ export function createOAuth() {
         const record = state.codes[key];
         delete state.codes[key];
         const verifier = form.get("code_verifier") || "";
-        const challenge = verifier ? createHash("sha256").update(verifier).digest("base64url") : "";
+        const challenge = /^[A-Za-z0-9._~-]{43,128}$/.test(verifier) ? createHash("sha256").update(verifier).digest("base64url") : "";
         if (!record || record.expiresAt < now() || record.clientId !== clientId || record.redirectUri !== form.get("redirect_uri") || !safeEqual(challenge, record.challenge)) {
           await persist();
           json(res, 400, { error: "invalid_grant" });
