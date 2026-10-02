@@ -39,6 +39,6 @@ assert.match(oauthSource(), /const GITHUB_SCOPES = \["read:user", "project", "re
 assert.match(oauthSource(), /credential_id: credentialId/, "Issued MCP access tokens should identify the stored GitHub OAuth credential");
 assert.match(oauthSource(), /createCipheriv\("aes-256-gcm"/, "GitHub OAuth credentials should be encrypted at rest");
 
-console.log("GraphQL regression checks passed.");
-
 assert.doesNotMatch(index, /GITHUB_TOKEN/, "GitHub API access should not fall back to a server-side PAT");
+
+console.log("GraphQL regression checks passed.");
