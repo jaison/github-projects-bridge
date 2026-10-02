@@ -9,7 +9,7 @@ A remote [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server
 | Tools | Scope |
 | --- | --- |
 | `list_projects`, `get_project`, `list_project_items` | `projects:read` |
-| `create_project_draft`, `update_project_single_select`, `delete_project_item` | `projects:write` |
+| `create_project_draft`, `update_project`, `update_project_single_select`, `delete_project_item` | `projects:write` |
 
 ## Requirements
 
