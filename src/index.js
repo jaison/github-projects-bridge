@@ -134,8 +134,8 @@ async function readProjectItems(projectId, first = 100, apiGraphql = githubGraph
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-async function findProjectItemWithRetry(projectId, itemId, apiGraphql = githubGraphql, attempts = 5) {
-  const delays = [0, 250, 500, 1000, 2000];
+async function findProjectItemWithRetry(projectId, itemId, apiGraphql = githubGraphql, attempts = 8) {
+  const delays = [0, 500, 1000, 2000, 4000, 6000, 8000, 10000];
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     if (delays[attempt] > 0) await sleep(delays[attempt]);
