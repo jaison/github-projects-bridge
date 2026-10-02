@@ -38,7 +38,7 @@ async function graphql(query, variables = {}) {
 }
 
 function registerTool(server, authContext, name, description, schema, handler) {
-  const scope = ["create_project_draft", "update_project_single_select", "delete_project_item"].includes(name)
+  const scope = ["create_project_draft", "update_project_single_select", "delete_project_item", "update_project"].includes(name)
     ? "projects:write"
     : "projects:read";
   server.registerTool(name, {
@@ -101,9 +101,30 @@ function makeMcpServer(authContext) {
       first: z.number().int().min(1).max(100).default(50)
     },
     async ({ project_id, first }) => {
-      const query = "query($id:ID!,$first:Int!){node(id:$id){... on ProjectV2{items(first:$first){nodes{id type content{... on Issue{title number url} ... on PullRequest{title number url} ... on DraftIssue{title body}} fieldValues(first:20){nodes{... on ProjectV2ItemFieldTextValue{text field{id name}} ... on ProjectV2ItemFieldNumberValue{number field{id name}} ... on ProjectV2ItemFieldDateValue{date field{id name}} ... on ProjectV2ItemFieldSingleSelectValue{name optionId field{id name}}}}}}}}}";
+      const query = "query($id:ID!,$first:Int!){node(id:$id){... on ProjectV2{items(first:$first){nodes{id type content{... on Issue{title number url} ... on PullRequest{title number url} ... on DraftIssue{title body}} fieldValues(first:20){nodes{... on ProjectV2ItemFieldTextValue{text field{... on ProjectV2Field{id name} ... on ProjectV2IterationField{id name} ... on ProjectV2MultiSelectField{id name} ... on ProjectV2SingleSelectField{id name}}} ... on ProjectV2ItemFieldNumberValue{number field{... on ProjectV2Field{id name} ... on ProjectV2IterationField{id name} ... on ProjectV2MultiSelectField{id name} ... on ProjectV2SingleSelectField{id name}}} ... on ProjectV2ItemFieldDateValue{date field{... on ProjectV2Field{id name} ... on ProjectV2IterationField{id name} ... on ProjectV2MultiSelectField{id name} ... on ProjectV2SingleSelectField{id name}}} ... on ProjectV2ItemFieldSingleSelectValue{name optionId field{... on ProjectV2Field{id name} ... on ProjectV2IterationField{id name} ... on ProjectV2MultiSelectField{id name} ... on ProjectV2SingleSelectField{id name}}}}}}}}}}";
       const data = await graphql(query, { id: project_id, first });
       return { content: [{ type: "text", text: JSON.stringify(data.node?.items?.nodes ?? [], null, 2) }] };
+    }
+  );
+
+  registerTool(server, authContext,
+    "update_project",
+    "Update the title and/or short description of a GitHub Projects V2 project.",
+    {
+      project_id: z.string(),
+      title: z.string().optional(),
+      short_description: z.string().optional()
+    },
+    async ({ project_id, title, short_description }) => {
+      if (title === undefined && short_description === undefined) {
+        throw new Error("Provide at least one of title or short_description.");
+      }
+      const input = { projectId: project_id };
+      if (title !== undefined) input.title = title;
+      if (short_description !== undefined) input.shortDescription = short_description;
+      const query = "mutation($input:UpdateProjectV2Input!){updateProjectV2(input:$input){projectV2{id title shortDescription url}}}";
+      const data = await graphql(query, { input });
+      return { content: [{ type: "text", text: JSON.stringify(data.updateProjectV2?.projectV2 ?? null, null, 2) }] };
     }
   );
 
