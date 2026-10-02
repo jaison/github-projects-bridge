@@ -141,22 +141,36 @@ export function registerProjectManagementTools({
       const normalizedRepositoryId = repository_id
         ? await resolveRepositoryId(repository_id)
         : undefined;
-      const input = {
-        ownerId,
-        title,
-        ...(normalizedRepositoryId ? { repositoryId: normalizedRepositoryId } : {}),
-        ...(team_id ? { teamId: team_id } : {})
-      };
+      const input = { ownerId, title };
       const query = "mutation($input:CreateProjectV2Input!){createProjectV2(input:$input){projectV2{id number title shortDescription readme public closed template url}}}";
       const data = await graphql(query, { input });
       let project = data?.createProjectV2?.projectV2;
       if (!project?.id) throw new Error("GitHub returned no project for createProjectV2.");
+
+      const warnings = [];
+      if (normalizedRepositoryId) {
+        try {
+          const linkQuery = "mutation($input:LinkProjectV2ToRepositoryInput!){linkProjectV2ToRepository(input:$input){repository{id name nameWithOwner url}}}";
+          await graphql(linkQuery, { input: { projectId: project.id, repositoryId: normalizedRepositoryId } });
+        } catch (error) {
+          warnings.push("Repository was not linked: " + String(error?.message || error));
+        }
+      }
+      if (team_id) {
+        try {
+          const linkTeamQuery = "mutation($input:LinkProjectV2ToTeamInput!){linkProjectV2ToTeam(input:$input){team{id name slug}}}";
+          await graphql(linkTeamQuery, { input: { projectId: project.id, teamId: team_id } });
+        } catch (error) {
+          warnings.push("Team was not linked: " + String(error?.message || error));
+        }
+      }
+
       if (short_description !== undefined) {
         const updateQuery = "mutation($input:UpdateProjectV2Input!){updateProjectV2(input:$input){projectV2{id number title shortDescription readme public closed template url}}}";
         const updated = await graphql(updateQuery, { input: { projectId: project.id, shortDescription: short_description } });
         project = updated?.updateProjectV2?.projectV2 || project;
       }
-      return result(project);
+      return result(warnings.length ? { ...project, warnings } : project);
     }
   );
 
@@ -756,8 +770,19 @@ export function registerProjectManagementTools({
     async ({ item_id, repository_id }) => {
       const query = "mutation($input:ConvertProjectV2DraftIssueItemToIssueInput!){convertProjectV2DraftIssueItemToIssue(input:$input){item{id type content{... on Issue{id title number url}}}}}";
       const normalizedRepositoryId = await resolveRepositoryId(repository_id);
-      const data = await graphql(query, { input: { itemId: item_id, repositoryId: normalizedRepositoryId } });
-      return result(data?.convertProjectV2DraftIssueItemToIssue?.item);
+      try {
+        const data = await graphql(query, { input: { itemId: item_id, repositoryId: normalizedRepositoryId } });
+        return result(data?.convertProjectV2DraftIssueItemToIssue?.item);
+      } catch (error) {
+        const message = String(error?.message || error);
+        if (/FORBIDDEN|does not have the correct permissions|access to this repository/i.test(message)) {
+          throw new Error(
+            "GitHub refused draft-to-issue conversion. The token must have access to create issues in the target repository; " +
+            "a Projects-only token is insufficient. " + message
+          );
+        }
+        throw error;
+      }
     }
   );
 
@@ -890,8 +915,19 @@ export function registerProjectManagementTools({
     async ({ project_id, repository_id }) => {
       const query = "mutation($input:LinkProjectV2ToRepositoryInput!){linkProjectV2ToRepository(input:$input){repository{id name nameWithOwner url}}}";
       const normalizedRepositoryId = await resolveRepositoryId(repository_id);
-      const data = await graphql(query, { input: { projectId: project_id, repositoryId: normalizedRepositoryId } });
-      return result(data?.linkProjectV2ToRepository?.repository);
+      try {
+        const data = await graphql(query, { input: { projectId: project_id, repositoryId: normalizedRepositoryId } });
+        return result(data?.linkProjectV2ToRepository?.repository);
+      } catch (error) {
+        const message = String(error?.message || error);
+        if (/FORBIDDEN|correct permissions|permission/i.test(message)) {
+          throw new Error(
+            "GitHub refused linking the repository to the project. Verify that the authenticated token has permission to modify Project V2 repository links. " +
+            message
+          );
+        }
+        throw error;
+      }
     }
   );
 
@@ -902,8 +938,19 @@ export function registerProjectManagementTools({
     async ({ project_id, repository_id }) => {
       const query = "mutation($input:UnlinkProjectV2FromRepositoryInput!){unlinkProjectV2FromRepository(input:$input){repository{id name nameWithOwner url}}}";
       const normalizedRepositoryId = await resolveRepositoryId(repository_id);
-      const data = await graphql(query, { input: { projectId: project_id, repositoryId: normalizedRepositoryId } });
-      return result(data?.unlinkProjectV2FromRepository?.repository);
+      try {
+        const data = await graphql(query, { input: { projectId: project_id, repositoryId: normalizedRepositoryId } });
+        return result(data?.unlinkProjectV2FromRepository?.repository);
+      } catch (error) {
+        const message = String(error?.message || error);
+        if (/FORBIDDEN|correct permissions|permission/i.test(message)) {
+          throw new Error(
+            "GitHub refused unlinking the repository from the project. Verify that the authenticated token has permission to modify Project V2 repository links. " +
+            message
+          );
+        }
+        throw error;
+      }
     }
   );
 
