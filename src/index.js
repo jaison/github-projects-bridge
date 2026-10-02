@@ -161,6 +161,7 @@ function makeMcpServer(authContext) {
 
 const transports = new Map();
 const transportSubjects = new Map();
+const transportClients = new Map();
 const transportAuth = new Map();
 const transportSubjects = new Map();
 const httpServer = createServer(async (req, res) => {
@@ -211,7 +212,7 @@ const httpServer = createServer(async (req, res) => {
   const sessionId = req.headers["mcp-session-id"];
   let transport = sessionId ? transports.get(sessionId) : undefined;
   let authContext = sessionId ? transportAuth.get(sessionId) : undefined;
-  if (transport && transportSubjects.get(sessionId) !== claims.sub) {
+  if (transport && (transportSubjects.get(sessionId) !== claims.sub || transportClients.get(sessionId) !== claims.client_id)) {
     res.writeHead(404);
     res.end("Unknown MCP session");
     return;
@@ -224,6 +225,7 @@ const httpServer = createServer(async (req, res) => {
       onsessioninitialized: id => {
         transports.set(id, transport);
         transportSubjects.set(id, claims.sub);
+        transportClients.set(id, claims.client_id);
         transportAuth.set(id, authContext);
       }
     });
@@ -232,6 +234,7 @@ const httpServer = createServer(async (req, res) => {
       if (id) {
         transports.delete(id);
         transportSubjects.delete(id);
+        transportClients.delete(id);
         transportAuth.delete(id);
       }
     };
