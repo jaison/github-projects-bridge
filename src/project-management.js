@@ -85,9 +85,9 @@ export function registerProjectManagementTools({
 }) {
   registerTool(server, authContext,
     "get_project_details",
-    "Get a GitHub Project V2 with metadata, fields, repositories, teams, views, status updates and workflows.",
-    { project_id: z.string(), first: z.number().int().min(1).max(100).default(100) },
-    async ({ project_id, first }) => {
+    "Get a GitHub Project V2 with metadata, fields, repositories, views, status updates and workflows. Set include_teams=true when the GitHub token also has read:org/read:discussion.",
+    { project_id: z.string(), first: z.number().int().min(1).max(100).default(100), include_teams: z.boolean().default(false) },
+    async ({ project_id, first, include_teams }) => {
       const query =
         "query($id:ID!,$first:Int!){node(id:$id){... on ProjectV2{" +
         "id number title shortDescription readme public closed template url resourcePath createdAt updatedAt " +
@@ -95,14 +95,31 @@ export function registerProjectManagementTools({
         "owner{... on User{id login} ... on Organization{id login}}" +
         "fields(first:$first){nodes{" + FIELD_FRAGMENT + "}}" +
         "repositories(first:$first){nodes{id name nameWithOwner url}}" +
-        "teams(first:$first){nodes{id name slug}}" +
         "views(first:$first){nodes{id number name layout filter createdAt updatedAt}}" +
         "statusUpdates(first:$first){nodes{id body status startDate targetDate createdAt updatedAt}}" +
         "workflows(first:$first){nodes{id number name enabled createdAt updatedAt}}" +
         "}}}";
       const data = await graphql(query, { id: project_id, first });
       if (!data?.node?.id) throw new Error("Project not found: " + project_id);
-      return result(data.node);
+
+      const details = { ...data.node };
+      if (include_teams) {
+        const teamsQuery = "query($id:ID!,$first:Int!){node(id:$id){... on ProjectV2{teams(first:$first){nodes{id name slug}}}}}";
+        try {
+          const teamsData = await graphql(teamsQuery, { id: project_id, first });
+          details.teams = teamsData?.node?.teams?.nodes ?? [];
+        } catch (error) {
+          const message = String(error?.message || error);
+          if (/INSUFFICIENT_SCOPES|read:org|read:discussion/.test(message)) {
+            details.teams = [];
+            details.teams_unavailable_reason = "The GitHub token requires read:org or read:discussion to read Project V2 teams.";
+          } else {
+            throw error;
+          }
+        }
+      }
+
+      return result(details);
     }
   );
 
