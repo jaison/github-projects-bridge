@@ -193,7 +193,7 @@ const httpServer = createServer(async (req, res) => {
 
   const claims = oauth.verifyAccessToken(bearerToken(req));
   const scope = requiredScope(parsed);
-  if (!claims || !(claims.scope.includes(scope) || (scope === "projects:read" && claims.scope.includes("projects:write")) )) {
+  if (!claims || !(claims.scopes.includes(scope) || (scope === "projects:read" && claims.scopes.includes("projects:write")) )) {
     const metadataUrl = oauth.publicUrl + "/.well-known/oauth-protected-resource";
     res.writeHead(401, {
       "content-type": "application/json",
