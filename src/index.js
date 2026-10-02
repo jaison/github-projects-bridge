@@ -102,7 +102,7 @@ async function resolveRepositoryId(repositoryIdOrFullName, token = GITHUB_TOKEN)
   const normalized = value.replace(/^https:\/\/github\.com\//, "").replace(/^\/+|\/+$/g, "");
   const parts = normalized.split("/");
   if (parts.length === 2 && parts[0] && parts[1]) {
-    const data = await graphql(
+    const data = await githubGraphql(
       "query($owner:String!,$name:String!){repository(owner:$owner,name:$name){id nameWithOwner}}",
       { owner: parts[0], name: parts[1] },
       token
@@ -182,12 +182,12 @@ function findProjectItem(items, itemId) {
   return items.find(item => item?.id === itemId) || null;
 }
 
-async function resolveOwnerId(owner, ownerType) {
+async function resolveOwnerId(owner, ownerType, apiGraphql = githubGraphql) {
   const query = ownerType === "organization"
     ? "query($login:String!){organization(login:$login){id login}}"
     : "query($login:String!){user(login:$login){id login}}";
   const key = ownerType === "organization" ? "organization" : "user";
-  const data = await graphql(query, { login: owner });
+  const data = await apiGraphql(query, { login: owner });
   const ownerNode = data?.[key];
   if (!ownerNode?.id) {
     throw new Error("GitHub " + ownerType + " not found: " + owner);
@@ -260,6 +260,7 @@ function makeMcpServer(authContext) {
   const graphql = async (query, variables = {}) => githubGraphql(query, variables, await currentGithubToken());
   const githubRest = async (path) => githubRestJson(path, await currentGithubToken());
   const resolveRepositoryIdForUser = async repositoryId => resolveRepositoryId(repositoryId, await currentGithubToken());
+  const resolveOwnerIdForUser = async (owner, ownerType) => resolveOwnerId(owner, ownerType, graphql);
 
   const server = new McpServer({ name: "github-projects-bridge", version: "0.2.0" });
 
@@ -291,7 +292,7 @@ function makeMcpServer(authContext) {
       short_description: z.string().optional()
     },
     async ({ owner = DEFAULT_OWNER, owner_type, title, short_description }) => {
-      const ownerId = await resolveOwnerId(owner, owner_type);
+      const ownerId = await resolveOwnerIdForUser(owner, owner_type);
 
       const query = "mutation($input:CreateProjectV2Input!){createProjectV2(input:$input){projectV2{id number title shortDescription url closed}}}";
       const data = await graphql(query, {
@@ -526,7 +527,7 @@ function makeMcpServer(authContext) {
     }
   );
 
-  registerProjectManagementTools({ server, authContext, registerTool, graphql, resolveOwnerId, resolveRepositoryId: resolveRepositoryIdForUser, readProjectItems: (projectId, first = 100) => readProjectItems(projectId, first, graphql), findProjectItem });
+  registerProjectManagementTools({ server, authContext, registerTool, graphql, resolveOwnerId: resolveOwnerIdForUser, resolveRepositoryId: resolveRepositoryIdForUser, readProjectItems: (projectId, first = 100) => readProjectItems(projectId, first, graphql), findProjectItem });
 
   return server;
 }
