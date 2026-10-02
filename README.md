@@ -39,7 +39,7 @@ cp .env.example .env
 | `GITHUB_TOKEN` | Yes | GitHub Personal Access Token (classic) with the `project` scope (**Full control of projects**) for personal-account Projects V2. |
 | `MCP_ACCESS_TOKEN` | Yes | Strong, private secret used to authenticate requests to the MCP endpoint. |
 | `GITHUB_OWNER` | Yes | GitHub login of the user or organization that owns the projects. |
-| `PORT` | No | Internal HTTP port. Defaults to `3000`. |
+| `PORT` | No | Internal HTTP port. Defaults to `80`. |
 
 ### Create the GitHub token
 
@@ -72,10 +72,10 @@ npm install
 npm start
 ```
 
-The server listens on `0.0.0.0:3000` by default.
+The server listens on `0.0.0.0:80` by default.
 
 ```bash
-curl http://localhost:3000/health
+curl http://localhost:80/health
 ```
 
 Expected response:
@@ -90,7 +90,7 @@ Expected response:
 docker build -t github-projects-bridge .
 docker run -d \
   --name github-projects-bridge \
-  -p 3000:3000 \
+  -p 80:80 \
   --env-file .env \
   github-projects-bridge
 ```
@@ -100,7 +100,7 @@ docker run -d \
 1. Create an **App** service connected to this GitHub repository.
 2. Select **Dockerfile** as the build method and use the root `Dockerfile`.
 3. Add the environment variables listed above in the Easypanel service settings. Do not commit a `.env` file.
-4. Set the internal port to `3000` and attach a domain with HTTPS.
+4. Set the internal port to `80` and attach a domain with HTTPS.
 5. Deploy and verify `https://YOUR-DOMAIN/health`.
 
 The MCP endpoint is `https://YOUR-DOMAIN/mcp`. Requests must include:
