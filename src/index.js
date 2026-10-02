@@ -140,8 +140,29 @@ function findProjectItem(items, itemId) {
   return items.find(item => item?.id === itemId) || null;
 }
 
+async function resolveOwnerId(owner, ownerType) {
+  const query = ownerType === "organization"
+    ? "query($login:String!){organization(login:$login){id login}}"
+    : "query($login:String!){user(login:$login){id login}}";
+  const key = ownerType === "organization" ? "organization" : "user";
+  const data = await graphql(query, { login: owner });
+  const ownerNode = data?.[key];
+  if (!ownerNode?.id) {
+    throw new Error("GitHub " + ownerType + " not found: " + owner);
+  }
+
+  console.log(
+    "[GPB][Owner] type=%s login=%s node_id=%s",
+    ownerType,
+    ownerNode.login,
+    ownerNode.id
+  );
+
+  return ownerNode.id;
+}
+
 function registerTool(server, authContext, name, description, schema, handler) {
-  const scope = ["create_project_draft", "update_project_single_select", "delete_project_item", "update_project"].includes(name)
+  const scope = ["create_project", "create_project_draft", "update_project_single_select", "delete_project_item", "update_project"].includes(name)
     ? "projects:write"
     : "projects:read";
   server.registerTool(name, {
@@ -196,6 +217,71 @@ function makeMcpServer(authContext) {
       const key = owner_type === "organization" ? "organization" : "user";
       const data = await graphql(query, { login: owner, first });
       return { content: [{ type: "text", text: JSON.stringify(data[key]?.projectsV2?.nodes ?? [], null, 2) }] };
+    }
+  );
+
+  registerTool(server, authContext,
+    "create_project",
+    "Create a new GitHub Project V2 under a user or organization.",
+    {
+      owner: z.string().optional(),
+      owner_type: z.enum(["user", "organization"]).default("user"),
+      title: z.string().min(1),
+      short_description: z.string().optional()
+    },
+    async ({ owner = DEFAULT_OWNER, owner_type, title, short_description }) => {
+      const ownerId = await resolveOwnerId(owner, owner_type);
+
+      const query = "mutation($input:CreateProjectV2Input!){createProjectV2(input:$input){projectV2{id number title shortDescription url closed}}}";
+      const data = await graphql(query, {
+        input: {
+          ownerId,
+          title
+        }
+      });
+
+      const createdProject = data?.createProjectV2?.projectV2;
+      if (!createdProject?.id) {
+        throw new Error("GitHub returned no project for createProjectV2.");
+      }
+
+      if (short_description !== undefined) {
+        const updateQuery = "mutation($input:UpdateProjectV2Input!){updateProjectV2(input:$input){projectV2{id title shortDescription url closed}}}";
+        const updated = await graphql(updateQuery, {
+          input: {
+            projectId: createdProject.id,
+            shortDescription: short_description
+          }
+        });
+        if (!updated?.updateProjectV2?.projectV2?.id) {
+          throw new Error("GitHub returned no project while setting the new project's description.");
+        }
+      }
+
+      const verifiedProject = await readProject(createdProject.id);
+      if (verifiedProject.title !== title) {
+        throw new Error(
+          "Read-after-write verification failed for new project title. Expected " +
+          JSON.stringify(title) + ", got " + JSON.stringify(verifiedProject.title)
+        );
+      }
+      if (short_description !== undefined && verifiedProject.shortDescription !== short_description) {
+        throw new Error(
+          "Read-after-write verification failed for new project description. Expected " +
+          JSON.stringify(short_description) + ", got " + JSON.stringify(verifiedProject.shortDescription)
+        );
+      }
+
+      console.log(
+        "[GPB][Verify] action=create_project owner=%s owner_type=%s project=%s verification=ok title=%s short_description=%s",
+        owner,
+        owner_type,
+        verifiedProject.id,
+        JSON.stringify(verifiedProject.title),
+        JSON.stringify(verifiedProject.shortDescription)
+      );
+
+      return { content: [{ type: "text", text: JSON.stringify(verifiedProject, null, 2) }] };
     }
   );
 
