@@ -74,7 +74,7 @@ export function registerProjectManagementTools({
         "query($id:ID!,$first:Int!){node(id:$id){... on ProjectV2{" +
         "id number title shortDescription readme public closed template url resourcePath createdAt updatedAt " +
         "viewerCanUpdate viewerCanClose viewerCanReopen " +
-        "owner{... on User{id login} ... on Organization{id login login}}" +
+        "owner{... on User{id login} ... on Organization{id login}}" +
         "fields(first:$first){nodes{" + FIELD_FRAGMENT + "}}" +
         "repositories(first:$first){nodes{id name nameWithOwner url}}" +
         "teams(first:$first){nodes{id name slug}}" +
@@ -85,6 +85,40 @@ export function registerProjectManagementTools({
       const data = await graphql(query, { id: project_id, first });
       if (!data?.node?.id) throw new Error("Project not found: " + project_id);
       return result(data.node);
+    }
+  );
+
+  registerTool(server, authContext,
+    "create_project_advanced",
+    "Create a GitHub Project V2 and optionally link it to a repository or team.",
+    {
+      owner: z.string().optional(),
+      owner_type: z.enum(["user","organization"]).default("user"),
+      title: z.string().min(1),
+      short_description: z.string().optional(),
+      repository_id: z.string().optional(),
+      team_id: z.string().optional()
+    },
+    async ({ owner, owner_type, title, short_description, repository_id, team_id }) => {
+      const resolvedOwner = owner || process.env.GITHUB_OWNER;
+      if (!resolvedOwner) throw new Error("owner is required when GITHUB_OWNER is not configured.");
+      const ownerId = await resolveOwnerId(resolvedOwner, owner_type);
+      const input = {
+        ownerId,
+        title,
+        ...(repository_id ? { repositoryId: repository_id } : {}),
+        ...(team_id ? { teamId: team_id } : {})
+      };
+      const query = "mutation($input:CreateProjectV2Input!){createProjectV2(input:$input){projectV2{id number title shortDescription readme public closed template url}}}";
+      const data = await graphql(query, { input });
+      let project = data?.createProjectV2?.projectV2;
+      if (!project?.id) throw new Error("GitHub returned no project for createProjectV2.");
+      if (short_description !== undefined) {
+        const updateQuery = "mutation($input:UpdateProjectV2Input!){updateProjectV2(input:$input){projectV2{id number title shortDescription readme public closed template url}}}";
+        const updated = await graphql(updateQuery, { input: { projectId: project.id, shortDescription: short_description } });
+        project = updated?.updateProjectV2?.projectV2 || project;
+      }
+      return result(project);
     }
   );
 
@@ -516,7 +550,7 @@ export function registerProjectManagementTools({
       if (readme !== undefined) input.readme = readme;
       if (isPublic !== undefined) input.public = isPublic;
       if (closed !== undefined) input.closed = closed;
-      const query = "mutation($input:UpdateProjectV2Input!){updateProjectV2(input:$input){projectV2{id number title shortDescription readme public closed public template url updatedAt}}}";
+      const query = "mutation($input:UpdateProjectV2Input!){updateProjectV2(input:$input){projectV2{id number title shortDescription readme public closed template url updatedAt}}}";
       const data = await graphql(query, { input });
       return result(data?.updateProjectV2?.projectV2);
     }
@@ -641,9 +675,9 @@ export function registerProjectManagementTools({
     "Move a Project V2 item to a new position. Omit after_item_id to move it to the top.",
     { project_id: z.string(), item_id: z.string(), after_item_id: z.string().optional() },
     async ({ project_id, item_id, after_item_id }) => {
-      const query = "mutation($input:UpdateProjectV2ItemPositionInput!){updateProjectV2ItemPosition(input:$input){clientMutationId}}";
+      const query = "mutation($input:UpdateProjectV2ItemPositionInput!){updateProjectV2ItemPosition(input:$input){items(first:100){nodes{id type isArchived}}}}";
       const data = await graphql(query, { input: { projectId: project_id, itemId: item_id, ...(after_item_id ? { afterId: after_item_id } : {}) } });
-      return result({ success: true, clientMutationId: data?.updateProjectV2ItemPosition?.clientMutationId ?? null });
+      return result({ success: true, items: data?.updateProjectV2ItemPosition?.items?.nodes ?? [] });
     }
   );
 
