@@ -35,11 +35,14 @@ A remote [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server
 ## Create the GitHub OAuth App
 
 1. Open [GitHub Developer Settings](https://github.com/settings/developers) → **OAuth Apps** → **New OAuth App**.
-2. Set the homepage URL to the value of `PUBLIC_URL`.
-3. Set the **Authorization callback URL** to exactly `PUBLIC_URL/oauth/github/callback`.
-4. Create the app, copy its Client ID, and generate a Client Secret.
-5. Set `GITHUB_OAUTH_CLIENT_ID` and `GITHUB_OAUTH_CLIENT_SECRET`.
-6. Set `OAUTH_ALLOWED_GITHUB_USERS` to only the GitHub logins allowed to use the bridge.
+2. Enter an application name.
+3. Set **Homepage URL** to the value of `PUBLIC_URL` (for example, `https://gpb.dev.perazza.com`). Do not include the `/oauth/github/callback` path in this field.
+4. Under **Redirect URIs**, add exactly `PUBLIC_URL/oauth/github/callback` (for example, `https://gpb.dev.perazza.com/oauth/github/callback`). This is the bridge endpoint that receives the response from GitHub.
+5. Create the app, copy its Client ID, and generate a Client Secret.
+6. Set `GITHUB_OAUTH_CLIENT_ID` and `GITHUB_OAUTH_CLIENT_SECRET`.
+7. Set `OAUTH_ALLOWED_GITHUB_USERS` to only the GitHub logins allowed to use the bridge.
+
+**Do not add ChatGPT's redirect URI to this GitHub section.** ChatGPT is the OAuth client for the MCP server: it supplies its own `redirect_uri` to the Dynamic Client Registration endpoint (`/oauth/register`), and the bridge validates and stores that URI for the session. The redirect URI configured in the GitHub OAuth App is exclusively `PUBLIC_URL/oauth/github/callback`.
 
 The login flow requests only GitHub's `read:user` scope. OAuth login and the service token used for Projects V2 are separate credentials.
 
@@ -72,7 +75,7 @@ On Easypanel, mount a persistent volume at `/data`. This implementation assumes 
 3. Configure the environment variables above.
 4. Set internal port `80`, domain, and HTTPS.
 5. Mount a persistent volume at `/data`.
-6. Set the GitHub OAuth App callback URL to `https://YOUR-DOMAIN/oauth/github/callback`.
+6. Verify the GitHub OAuth App settings: **Homepage URL** = `PUBLIC_URL`; **Redirect URI** = `PUBLIC_URL/oauth/github/callback`.
 7. Deploy.
 
 ## Endpoints
@@ -86,7 +89,7 @@ On Easypanel, mount a persistent volume at `/data`. This implementation assumes 
 - `POST /oauth/token` — authorization-code exchange and token refresh.
 - `GET /oauth/github/callback` — GitHub authentication callback.
 
-Register `https://YOUR-DOMAIN/mcp` in ChatGPT and select OAuth as the authentication method. The server advertises the `projects:read` and `projects:write` scopes.
+Register `https://YOUR-DOMAIN/mcp` in ChatGPT and select OAuth as the authentication method. ChatGPT supplies its redirect URI during dynamic registration; you do not need to add it manually to the GitHub OAuth App. The server advertises the `projects:read` and `projects:write` scopes.
 
 ## Security and limitations
 
