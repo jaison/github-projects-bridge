@@ -1,24 +1,33 @@
 import { createServer } from "node:http";
-import { randomUUID, timingSafeEqual } from "node:crypto";
+import { randomUUID } from "node:crypto";
+import { createOAuth } from "./oauth.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 
 const PORT = Number(process.env.PORT || 80);
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
-const MCP_ACCESS_TOKEN = process.env.MCP_ACCESS_TOKEN;
 const DEFAULT_OWNER = process.env.GITHUB_OWNER;
 
-if (!GITHUB_TOKEN || !MCP_ACCESS_TOKEN || !DEFAULT_OWNER) {
-  throw new Error("Configure GITHUB_TOKEN, MCP_ACCESS_TOKEN and GITHUB_OWNER.");
+if (!GITHUB_TOKEN || !DEFAULT_OWNER) {
+  throw new Error("Configure GITHUB_TOKEN and GITHUB_OWNER.");
 }
 
-function authorized(req) {
-  const supplied = req.headers.authorization || "";
-  const expected = "Bearer " + MCP_ACCESS_TOKEN;
-  const a = Buffer.from(supplied);
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
+const oauth = createOAuth();
+
+function bearerToken(req) {
+  const match = /^Bearer\\s+(.+)$/i.exec(req.headers.authorization || "");
+  return match?.[1] || "";
+}
+
+function requiredScope(message) {
+  if (message?.method === "tools/call") {
+    const name = message.params?.name || "";
+    return ["create_project_draft", "update_project_single_select", "delete_project_item"].includes(name)
+      ? "projects:write"
+      : "projects:read";
+  }
+  return "projects:read";
 }
 
 async function graphql(query, variables = {}) {
@@ -36,6 +45,17 @@ async function graphql(query, variables = {}) {
     throw new Error(JSON.stringify(payload.errors || payload));
   }
   return payload.data;
+}
+
+function registerTool(server, name, description, schema, handler) {
+  const scope = ["create_project_draft", "update_project_single_select", "delete_project_item"].includes(name)
+    ? "projects:write"
+    : "projects:read";
+  server.registerTool(name, {
+    description,
+    inputSchema: z.object(schema),
+    _meta: { securitySchemes: [{ type: "oauth2", scopes: [scope] }] }
+  }, handler);
 }
 
 function makeMcpServer() {
@@ -138,24 +158,29 @@ function makeMcpServer() {
 
 const transports = new Map();
 const httpServer = createServer(async (req, res) => {
-  if (req.url === "/health") {
+  const url = new URL(req.url || "/", oauth.publicUrl);
+  if (await oauth.handle(req, res, url)) return;
+
+  if (url.pathname === "/health") {
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ ok: true, service: "github-projects-bridge" }));
     return;
   }
-  if (req.url !== "/mcp") {
+  if (url.pathname !== "/mcp") {
     res.writeHead(404);
     res.end("Not found");
     return;
   }
-  if (!authorized(req)) {
-    res.writeHead(401, { "WWW-Authenticate": "Bearer" });
-    res.end("Unauthorized");
-    return;
-  }
 
   let body = "";
-  for await (const chunk of req) body += chunk;
+  for await (const chunk of req) {
+    body += chunk;
+    if (body.length > 1024 * 1024) {
+      res.writeHead(413);
+      res.end("Request body too large");
+      return;
+    }
+  }
   let parsed;
   try {
     parsed = body ? JSON.parse(body) : undefined;
@@ -165,9 +190,21 @@ const httpServer = createServer(async (req, res) => {
     return;
   }
 
+  const claims = oauth.verifyAccessToken(bearerToken(req));
+  const scope = requiredScope(parsed);
+  if (!claims || !claims.scope.includes(scope)) {
+    const metadataUrl = oauth.publicUrl + "/.well-known/oauth-protected-resource";
+    res.writeHead(401, {
+      "content-type": "application/json",
+      "cache-control": "no-store",
+      "WWW-Authenticate": 'Bearer resource_metadata="' + metadataUrl + '", scope="' + scope + '"'
+    });
+    res.end(JSON.stringify({ error: "unauthorized", error_description: "A valid OAuth access token with the required scope is required." }));
+    return;
+  }
+
   const sessionId = req.headers["mcp-session-id"];
   let transport = sessionId ? transports.get(sessionId) : undefined;
-
   if (!transport && req.method === "POST") {
     transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
