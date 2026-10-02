@@ -20,16 +20,6 @@ function bearerToken(req) {
   return value.slice(0, 7).toLowerCase() === "bearer " ? value.slice(7).trim() : "";
 }
 
-function requiredScope(message) {
-  if (message?.method === "tools/call") {
-    const name = message.params?.name || "";
-    return ["create_project_draft", "update_project_single_select", "delete_project_item"].includes(name)
-      ? "projects:write"
-      : "projects:read";
-  }
-  return "projects:read";
-}
-
 async function graphql(query, variables = {}) {
   const response = await fetch("https://api.github.com/graphql", {
     method: "POST",
@@ -47,7 +37,7 @@ async function graphql(query, variables = {}) {
   return payload.data;
 }
 
-function registerTool(server, name, description, schema, handler) {
+function registerTool(server, authContext, name, description, schema, handler) {
   const scope = ["create_project_draft", "update_project_single_select", "delete_project_item"].includes(name)
     ? "projects:write"
     : "projects:read";
@@ -55,10 +45,23 @@ function registerTool(server, name, description, schema, handler) {
     description,
     inputSchema: z.object(schema),
     _meta: { securitySchemes: [{ type: "oauth2", scopes: [scope] }] }
-  }, handler);
+  }, async (args, context) => {
+    const claims = authContext.claims;
+    const allowed = claims && (claims.scopes.includes(scope) || (scope === "projects:read" && claims.scopes.includes("projects:write")));
+    if (!allowed) {
+      return {
+        content: [{ type: "text", text: "OAuth scope required: " + scope }],
+        isError: true,
+        _meta: {
+          "mcp/www_authenticate": 'Bearer resource_metadata="' + oauth.publicUrl + '/.well-known/oauth-protected-resource", scope="' + scope + '"'
+        }
+      };
+    }
+    return handler(args, context);
+  });
 }
 
-function makeMcpServer() {
+function makeMcpServer(authContext) {
   const server = new McpServer({ name: "github-projects-bridge", version: "0.1.0" });
 
   registerTool(server,
@@ -158,6 +161,8 @@ function makeMcpServer() {
 
 const transports = new Map();
 const transportSubjects = new Map();
+const transportAuth = new Map();
+const transportSubjects = new Map();
 const httpServer = createServer(async (req, res) => {
   const url = new URL(req.url || "/", oauth.publicUrl);
   if (await oauth.handle(req, res, url)) return;
@@ -192,35 +197,45 @@ const httpServer = createServer(async (req, res) => {
   }
 
   const claims = oauth.verifyAccessToken(bearerToken(req));
-  const scope = requiredScope(parsed);
-  if (!claims || !(claims.scopes.includes(scope) || (scope === "projects:read" && claims.scopes.includes("projects:write")) )) {
+  if (!claims) {
     const metadataUrl = oauth.publicUrl + "/.well-known/oauth-protected-resource";
     res.writeHead(401, {
       "content-type": "application/json",
       "cache-control": "no-store",
-      "WWW-Authenticate": 'Bearer resource_metadata="' + metadataUrl + '", scope="' + scope + '"'
+      "WWW-Authenticate": 'Bearer resource_metadata="' + metadataUrl + '", scope="projects:read"'
     });
-    res.end(JSON.stringify({ error: "unauthorized", error_description: "A valid OAuth access token with the required scope is required." }));
+    res.end(JSON.stringify({ error: "unauthorized", error_description: "A valid OAuth access token is required." }));
     return;
   }
 
   const sessionId = req.headers["mcp-session-id"];
   let transport = sessionId ? transports.get(sessionId) : undefined;
+  let authContext = sessionId ? transportAuth.get(sessionId) : undefined;
   if (transport && transportSubjects.get(sessionId) !== claims.sub) {
     res.writeHead(404);
     res.end("Unknown MCP session");
     return;
   }
+  if (transport && authContext) authContext.claims = claims;
   if (!transport && req.method === "POST") {
+    authContext = { claims };
     transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
-      onsessioninitialized: id => { transports.set(id, transport); transportSubjects.set(id, claims.sub); }
+      onsessioninitialized: id => {
+        transports.set(id, transport);
+        transportSubjects.set(id, claims.sub);
+        transportAuth.set(id, authContext);
+      }
     });
     transport.onclose = () => {
       const id = transport.sessionId;
-      if (id) { transports.delete(id); transportSubjects.delete(id); }
+      if (id) {
+        transports.delete(id);
+        transportSubjects.delete(id);
+        transportAuth.delete(id);
+      }
     };
-    const server = makeMcpServer();
+    const server = makeMcpServer(authContext);
     await server.connect(transport);
   }
   if (!transport) {
