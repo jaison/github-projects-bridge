@@ -4,7 +4,7 @@ import { z } from "zod";
 const FIELD_FRAGMENT =
   "... on ProjectV2Field{id name dataType isIssueField createdAt updatedAt}" +
   " ... on ProjectV2SingleSelectField{id name dataType isIssueField createdAt updatedAt options{id name color description}}" +
-  " ... on ProjectV2MultiSelectField{id name dataType isIssueField createdAt updatedAt options{id name color description}}" +
+  " ... on ProjectV2MultiSelectField{id name dataType isIssueField createdAt updatedAt multiSelectOptions{id name color description}}" +
   " ... on ProjectV2IterationField{id name dataType isIssueField createdAt updatedAt configuration{duration startDay iterations{id title startDate duration} completedIterations{id title startDate duration}}}";
 
 const ITEM_FRAGMENT =
@@ -19,7 +19,7 @@ const ITEM_FRAGMENT =
   " ... on ProjectV2ItemFieldDateValue{date field{... on ProjectV2Field{id name dataType}}}" +
   " ... on ProjectV2ItemFieldIterationValue{iterationId field{... on ProjectV2IterationField{id name dataType}}}" +
   " ... on ProjectV2ItemFieldSingleSelectValue{name optionId field{... on ProjectV2SingleSelectField{id name dataType}}}" +
-  " ... on ProjectV2ItemFieldMultiSelectValue{names optionIds field{... on ProjectV2MultiSelectField{id name dataType}}}" +
+  " ... on ProjectV2ItemFieldMultiSelectValue{value options{id name color description} field{... on ProjectV2MultiSelectField{id name dataType}}}" +
   "}}";
 
 function result(value) {
@@ -41,6 +41,23 @@ async function getField(graphql, fieldId) {
   return data?.node ?? null;
 }
 
+async function resolveDraftIssueId(graphql, draftIssueIdOrItemId) {
+  const query =
+    "query($id:ID!){node(id:$id){__typename " +
+    "... on DraftIssue{id} " +
+    "... on ProjectV2Item{content{... on DraftIssue{id}}}" +
+    "}}}";
+  const data = await graphql(query, { id: draftIssueIdOrItemId });
+  const node = data?.node;
+  const draftIssueId = node?.__typename === "DraftIssue"
+    ? node.id
+    : node?.content?.id;
+  if (!draftIssueId) {
+    throw new Error("Draft issue not found for ID: " + draftIssueIdOrItemId);
+  }
+  return draftIssueId;
+}
+
 async function getProjectView(graphql, projectId, number) {
   const query =
     "query($id:ID!,$number:Int!){node(id:$id){... on ProjectV2{" +
@@ -48,7 +65,7 @@ async function getProjectView(graphql, projectId, number) {
     "fields(first:100){nodes{" +
     "... on ProjectV2Field{id name dataType}" +
     " ... on ProjectV2SingleSelectField{id name dataType options{id name color description}}" +
-    " ... on ProjectV2MultiSelectField{id name dataType options{id name color description}}" +
+    " ... on ProjectV2MultiSelectField{id name dataType multiSelectOptions{id name color description}}" +
     " ... on ProjectV2IterationField{id name dataType}" +
     "}}" +
     "}}}}";
@@ -63,7 +80,8 @@ export function registerProjectManagementTools({
   graphql,
   resolveOwnerId,
   readProjectItems,
-  findProjectItem
+  findProjectItem,
+  resolveRepositoryId
 }) {
   registerTool(server, authContext,
     "get_project_details",
@@ -103,10 +121,13 @@ export function registerProjectManagementTools({
       const resolvedOwner = owner || process.env.GITHUB_OWNER;
       if (!resolvedOwner) throw new Error("owner is required when GITHUB_OWNER is not configured.");
       const ownerId = await resolveOwnerId(resolvedOwner, owner_type);
+      const normalizedRepositoryId = repository_id
+        ? await resolveRepositoryId(repository_id)
+        : undefined;
       const input = {
         ownerId,
         title,
-        ...(repository_id ? { repositoryId: repository_id } : {}),
+        ...(normalizedRepositoryId ? { repositoryId: normalizedRepositoryId } : {}),
         ...(team_id ? { teamId: team_id } : {})
       };
       const query = "mutation($input:CreateProjectV2Input!){createProjectV2(input:$input){projectV2{id number title shortDescription readme public closed template url}}}";
@@ -182,7 +203,7 @@ export function registerProjectManagementTools({
         "node(id:$id){... on ProjectV2{" +
         "items(first:$first,after:$after,query:$query,archivedStates:$archivedStates,orderBy:{field:POSITION,direction:ASC}){" +
         "nodes{" + ITEM_FRAGMENT + "} pageInfo{hasNextPage endCursor}" +
-        "}}}";
+        "}}}}";
       const data = await graphql(gql, {
         id: project_id,
         first,
@@ -427,7 +448,7 @@ export function registerProjectManagementTools({
       if (field.dataType !== "SINGLE_SELECT" && field.dataType !== "MULTI_SELECT") {
         throw new Error("Field must be SINGLE_SELECT or MULTI_SELECT.");
       }
-      const existing = Array.isArray(field.options) ? field.options : [];
+      const existing = field.dataType === "MULTI_SELECT"\n        ? (Array.isArray(field.multiSelectOptions) ? field.multiSelectOptions : [])\n        : (Array.isArray(field.options) ? field.options : []);
       if (existing.some(o => o.name === option.name)) {
         throw new Error("An option with this name already exists: " + option.name);
       }
@@ -470,7 +491,7 @@ export function registerProjectManagementTools({
       if (field.dataType !== "SINGLE_SELECT" && field.dataType !== "MULTI_SELECT") {
         throw new Error("Field must be SINGLE_SELECT or MULTI_SELECT.");
       }
-      const existing = Array.isArray(field.options) ? field.options : [];
+      const existing = field.dataType === "MULTI_SELECT"\n        ? (Array.isArray(field.multiSelectOptions) ? field.multiSelectOptions : [])\n        : (Array.isArray(field.options) ? field.options : []);
       const target = existing.find(o => o.id === option_id);
       if (!target) throw new Error("Field option not found: " + option_id);
       const options = existing.map(o => ({
@@ -498,7 +519,7 @@ export function registerProjectManagementTools({
       if (field.dataType !== "SINGLE_SELECT" && field.dataType !== "MULTI_SELECT") {
         throw new Error("Field must be SINGLE_SELECT or MULTI_SELECT.");
       }
-      const existing = Array.isArray(field.options) ? field.options : [];
+      const existing = field.dataType === "MULTI_SELECT"\n        ? (Array.isArray(field.multiSelectOptions) ? field.multiSelectOptions : [])\n        : (Array.isArray(field.options) ? field.options : []);
       if (!existing.some(o => o.id === option_id)) throw new Error("Field option not found: " + option_id);
       if (existing.length <= 1) throw new Error("Refusing to remove the last option from a select field.");
       const options = existing.filter(o => o.id !== option_id).map(o => ({
@@ -694,7 +715,7 @@ export function registerProjectManagementTools({
       if (title === undefined && body === undefined && assignee_ids === undefined) {
         throw new Error("Provide at least one draft issue property to update.");
       }
-      const input = { draftIssueId: draft_issue_id };
+      const resolvedDraftIssueId = await resolveDraftIssueId(graphql, draft_issue_id);\n      const input = { draftIssueId: resolvedDraftIssueId };
       if (title !== undefined) input.title = title;
       if (body !== undefined) input.body = body;
       if (assignee_ids !== undefined) input.assigneeIds = assignee_ids;
@@ -710,7 +731,7 @@ export function registerProjectManagementTools({
     { item_id: z.string(), repository_id: z.string() },
     async ({ item_id, repository_id }) => {
       const query = "mutation($input:ConvertProjectV2DraftIssueItemToIssueInput!){convertProjectV2DraftIssueItemToIssue(input:$input){item{id type content{... on Issue{id title number url}}}}}";
-      const data = await graphql(query, { input: { itemId: item_id, repositoryId: repository_id } });
+      const normalizedRepositoryId = await resolveRepositoryId(repository_id);\n      const data = await graphql(query, { input: { itemId: item_id, repositoryId: normalizedRepositoryId } });
       return result(data?.convertProjectV2DraftIssueItemToIssue?.item);
     }
   );
@@ -843,7 +864,7 @@ export function registerProjectManagementTools({
     { project_id: z.string(), repository_id: z.string() },
     async ({ project_id, repository_id }) => {
       const query = "mutation($input:LinkProjectV2ToRepositoryInput!){linkProjectV2ToRepository(input:$input){repository{id name nameWithOwner url}}}";
-      const data = await graphql(query, { input: { projectId: project_id, repositoryId: repository_id } });
+      const normalizedRepositoryId = await resolveRepositoryId(repository_id);\n      const data = await graphql(query, { input: { projectId: project_id, repositoryId: normalizedRepositoryId } });
       return result(data?.linkProjectV2ToRepository?.repository);
     }
   );
@@ -854,7 +875,7 @@ export function registerProjectManagementTools({
     { project_id: z.string(), repository_id: z.string() },
     async ({ project_id, repository_id }) => {
       const query = "mutation($input:UnlinkProjectV2FromRepositoryInput!){unlinkProjectV2FromRepository(input:$input){repository{id name nameWithOwner url}}}";
-      const data = await graphql(query, { input: { projectId: project_id, repositoryId: repository_id } });
+      const normalizedRepositoryId = await resolveRepositoryId(repository_id);\n      const data = await graphql(query, { input: { projectId: project_id, repositoryId: normalizedRepositoryId } });
       return result(data?.unlinkProjectV2FromRepository?.repository);
     }
   );
