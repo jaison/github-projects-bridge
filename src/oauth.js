@@ -8,7 +8,7 @@ import {
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
-const SCOPES = ["projects:read", "projects:write"];
+const SCOPES = ["projects:read", "projects:write", "offline_access"];
 const now = () => Math.floor(Date.now() / 1000);
 const b64url = value => Buffer.from(value).toString("base64url");
 const hash = value => createHmac("sha256", "github-projects-bridge-oauth-store").update(value).digest("hex");
@@ -259,7 +259,13 @@ export function createOAuth() {
         });
         const user = await userResponse.json();
         if (!userResponse.ok || !user.login || !allowedUsers.has(user.login.toLowerCase())) {
-          html(res, 403, "<h1>Esta conta GitHub não está autorizada a usar este servidor.</h1>");
+          const denied = new URL(request.redirectUri);
+          denied.searchParams.set("error", "access_denied");
+          if (request.state) denied.searchParams.set("state", request.state);
+          denied.searchParams.set("iss", publicUrl);
+          await persist();
+          res.writeHead(302, { location: denied.toString(), "cache-control": "no-store" });
+          res.end();
           return true;
         }
         const consentId = random();
