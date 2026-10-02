@@ -64,7 +64,7 @@ function registerTool(server, authContext, name, description, schema, handler) {
 function makeMcpServer(authContext) {
   const server = new McpServer({ name: "github-projects-bridge", version: "0.1.0" });
 
-  registerTool(server,
+  registerTool(server, authContext,
     "list_projects",
     "List GitHub Projects V2 owned by a user or organization.",
     {
@@ -82,7 +82,7 @@ function makeMcpServer(authContext) {
     }
   );
 
-  registerTool(server,
+  registerTool(server, authContext,
     "get_project",
     "Get a GitHub Project V2, including its fields and options.",
     { project_id: z.string() },
@@ -93,7 +93,7 @@ function makeMcpServer(authContext) {
     }
   );
 
-  registerTool(server,
+  registerTool(server, authContext,
     "list_project_items",
     "List cards/items in a GitHub Project V2.",
     {
@@ -107,7 +107,7 @@ function makeMcpServer(authContext) {
     }
   );
 
-  registerTool(server,
+  registerTool(server, authContext,
     "create_project_draft",
     "Create a draft card in a GitHub Project V2.",
     {
@@ -122,7 +122,7 @@ function makeMcpServer(authContext) {
     }
   );
 
-  registerTool(server,
+  registerTool(server, authContext,
     "update_project_single_select",
     "Set a single-select field (for example Status or Priority) on a project item.",
     {
@@ -145,7 +145,7 @@ function makeMcpServer(authContext) {
     }
   );
 
-  registerTool(server,
+  registerTool(server, authContext,
     "delete_project_item",
     "Remove an item/card from a GitHub Project V2.",
     { project_id: z.string(), item_id: z.string() },
