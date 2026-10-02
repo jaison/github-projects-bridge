@@ -21,20 +21,97 @@ function bearerToken(req) {
 }
 
 async function graphql(query, variables = {}) {
-  const response = await fetch("https://api.github.com/graphql", {
-    method: "POST",
-    headers: {
-      Authorization: "Bearer " + GITHUB_TOKEN,
-      "Content-Type": "application/json",
-      "User-Agent": "github-projects-bridge"
-    },
-    body: JSON.stringify({ query, variables })
-  });
-  const payload = await response.json();
-  if (!response.ok || payload.errors?.length) {
-    throw new Error(JSON.stringify(payload.errors || payload));
+  const operation = query.match(/^(?:query|mutation)(?:\\([^)]*\\))?\\{([A-Za-z0-9_]+)/)?.[1] || "unknown";
+  const startedAt = Date.now();
+
+  let response;
+  let payload;
+  try {
+    response = await fetch("https://api.github.com/graphql", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer " + GITHUB_TOKEN,
+        "Content-Type": "application/json",
+        "User-Agent": "github-projects-bridge"
+      },
+      body: JSON.stringify({ query, variables })
+    });
+    payload = await response.json();
+  } catch (error) {
+    console.error(
+      "[GPB][GraphQL] op=%s transport_error=%s duration_ms=%d",
+      operation,
+      error?.message || String(error),
+      Date.now() - startedAt
+    );
+    throw error;
   }
+
+  const errors = Array.isArray(payload?.errors) ? payload.errors : [];
+  console.log(
+    "[GPB][GraphQL] op=%s http=%d errors=%d duration_ms=%d",
+    operation,
+    response.status,
+    errors.length,
+    Date.now() - startedAt
+  );
+
+  if (errors.length) {
+    console.error("[GPB][GraphQL] op=%s errors=%s", operation, JSON.stringify(errors));
+  }
+
+  if (!response.ok || errors.length) {
+    throw new Error(JSON.stringify(errors.length ? errors : payload));
+  }
+
+  if (!payload?.data) {
+    console.error("[GPB][GraphQL] op=%s missing_data payload=%s", operation, JSON.stringify(payload));
+    throw new Error("GitHub GraphQL returned no data.");
+  }
+
   return payload.data;
+}
+
+async function readProject(projectId) {
+  const query = "query($id:ID!){node(id:$id){... on ProjectV2{id number title shortDescription url closed}}}";
+  const data = await graphql(query, { id: projectId });
+  if (!data?.node) {
+    throw new Error("Project not found after GitHub API call: " + projectId);
+  }
+  return data.node;
+}
+
+async function readProjectItems(projectId, first = 100) {
+  const query = "query($id:ID!,$first:Int!){node(id:$id){... on ProjectV2{items(first:$first){nodes{id type content{... on Issue{title number url} ... on PullRequest{title number url} ... on DraftIssue{title body}} fieldValues(first:20){nodes{... on ProjectV2ItemFieldTextValue{text field{... on ProjectV2Field{id name} ... on ProjectV2IterationField{id name} ... on ProjectV2MultiSelectField{id name} ... on ProjectV2SingleSelectField{id name}}} ... on ProjectV2ItemFieldNumberValue{number field{... on ProjectV2Field{id name} ... on ProjectV2IterationField{id name} ... on ProjectV2MultiSelectField{id name}}} ... on ProjectV2ItemFieldDateValue{date field{... on ProjectV2Field{id name} ... on ProjectV2IterationField{id name} ... on ProjectV2MultiSelectField{id name} ... on ProjectV2SingleSelectField{id name}}} ... on ProjectV2ItemFieldSingleSelectValue{name optionId field{... on ProjectV2Field{id name} ... on ProjectV2IterationField{id name} ... on ProjectV2MultiSelectField{id name} ... on ProjectV2SingleSelectField{id name}}}}}}}}}}";
+  const data = await graphql(query, { id: projectId, first });
+  const items = data?.node?.items?.nodes;
+  if (!Array.isArray(items)) {
+    throw new Error("Project items could not be read after GitHub API call: " + projectId);
+  }
+  return items;
+}
+
+function toolLogArgs(name, args) {
+  const fields = ["project_id", "item_id", "field_id", "option_id", "title"];
+  const parts = fields
+    .filter(key => args?.[key] !== undefined)
+    .map(key => key + "=" + JSON.stringify(String(args[key]).slice(0, 200)));
+  if (args?.short_description !== undefined) parts.push("short_description=" + JSON.stringify(String(args.short_description).slice(0, 200)));
+  if (args?.body !== undefined) parts.push("body_length=" + String(String(args.body).length));
+  return parts.join(" ");
+}
+
+function verifyProjectUpdate(actual, expected) {
+  if (expected.title !== undefined && actual.title !== expected.title) {
+    throw new Error("Read-after-write verification failed for project title. Expected " + JSON.stringify(expected.title) + ", got " + JSON.stringify(actual.title));
+  }
+  if (expected.short_description !== undefined && actual.shortDescription !== expected.short_description) {
+    throw new Error("Read-after-write verification failed for project description. Expected " + JSON.stringify(expected.short_description) + ", got " + JSON.stringify(actual.shortDescription));
+  }
+}
+
+function findProjectItem(items, itemId) {
+  return items.find(item => item?.id === itemId) || null;
 }
 
 function registerTool(server, authContext, name, description, schema, handler) {
@@ -57,7 +134,21 @@ function registerTool(server, authContext, name, description, schema, handler) {
         }
       };
     }
-    return handler(args, context);
+    const startedAt = Date.now();
+    console.log("[GPB][Tool] START name=%s %s", name, toolLogArgs(name, args));
+    try {
+      const result = await handler(args, context);
+      console.log("[GPB][Tool] END name=%s duration_ms=%d status=ok", name, Date.now() - startedAt);
+      return result;
+    } catch (error) {
+      console.error(
+        "[GPB][Tool] END name=%s duration_ms=%d status=error message=%s",
+        name,
+        Date.now() - startedAt,
+        error?.message || String(error)
+      );
+      throw error;
+    }
   });
 }
 
@@ -102,8 +193,8 @@ function makeMcpServer(authContext) {
     },
     async ({ project_id, first }) => {
       const query = "query($id:ID!,$first:Int!){node(id:$id){... on ProjectV2{items(first:$first){nodes{id type content{... on Issue{title number url} ... on PullRequest{title number url} ... on DraftIssue{title body}} fieldValues(first:20){nodes{... on ProjectV2ItemFieldTextValue{text field{... on ProjectV2Field{id name} ... on ProjectV2IterationField{id name} ... on ProjectV2MultiSelectField{id name} ... on ProjectV2SingleSelectField{id name}}} ... on ProjectV2ItemFieldNumberValue{number field{... on ProjectV2Field{id name} ... on ProjectV2IterationField{id name} ... on ProjectV2MultiSelectField{id name} ... on ProjectV2SingleSelectField{id name}}} ... on ProjectV2ItemFieldDateValue{date field{... on ProjectV2Field{id name} ... on ProjectV2IterationField{id name} ... on ProjectV2MultiSelectField{id name} ... on ProjectV2SingleSelectField{id name}}} ... on ProjectV2ItemFieldSingleSelectValue{name optionId field{... on ProjectV2Field{id name} ... on ProjectV2IterationField{id name} ... on ProjectV2MultiSelectField{id name} ... on ProjectV2SingleSelectField{id name}}}}}}}}}}";
-      const data = await graphql(query, { id: project_id, first });
-      return { content: [{ type: "text", text: JSON.stringify(data.node?.items?.nodes ?? [], null, 2) }] };
+      const items = await readProjectItems(project_id, first);
+      return { content: [{ type: "text", text: JSON.stringify(items, null, 2) }] };
     }
   );
 
@@ -124,7 +215,22 @@ function makeMcpServer(authContext) {
       if (short_description !== undefined) input.shortDescription = short_description;
       const query = "mutation($input:UpdateProjectV2Input!){updateProjectV2(input:$input){projectV2{id title shortDescription url}}}";
       const data = await graphql(query, { input });
-      return { content: [{ type: "text", text: JSON.stringify(data.updateProjectV2?.projectV2 ?? null, null, 2) }] };
+      const updatedProject = data?.updateProjectV2?.projectV2;
+      if (!updatedProject?.id) {
+        throw new Error("GitHub returned no updated project for updateProjectV2.");
+      }
+
+      const verifiedProject = await readProject(project_id);
+      verifyProjectUpdate(verifiedProject, { title, short_description });
+
+      console.log(
+        "[GPB][Verify] action=update_project project=%s verification=ok title=%s short_description=%s",
+        project_id,
+        JSON.stringify(verifiedProject.title),
+        JSON.stringify(verifiedProject.shortDescription)
+      );
+
+      return { content: [{ type: "text", text: JSON.stringify(verifiedProject, null, 2) }] };
     }
   );
 
@@ -139,7 +245,30 @@ function makeMcpServer(authContext) {
     async ({ project_id, title, body = "" }) => {
       const query = "mutation($input:AddProjectV2DraftIssueInput!){addProjectV2DraftIssue(input:$input){projectItem{id}}}";
       const data = await graphql(query, { input: { projectId: project_id, title, body } });
-      return { content: [{ type: "text", text: JSON.stringify(data.addProjectV2DraftIssue, null, 2) }] };
+      const createdItemId = data?.addProjectV2DraftIssue?.projectItem?.id;
+      if (!createdItemId) {
+        throw new Error("GitHub returned no project item for addProjectV2DraftIssue.");
+      }
+
+      const items = await readProjectItems(project_id);
+      const verifiedItem = findProjectItem(items, createdItemId);
+      if (!verifiedItem) {
+        throw new Error("Read-after-write verification failed: created draft item was not found in the project.");
+      }
+
+      const verifiedTitle = verifiedItem.content?.title;
+      if (verifiedTitle !== title) {
+        throw new Error("Read-after-write verification failed for draft title. Expected " + JSON.stringify(title) + ", got " + JSON.stringify(verifiedTitle));
+      }
+
+      console.log(
+        "[GPB][Verify] action=create_project_draft project=%s item=%s verification=ok title=%s",
+        project_id,
+        createdItemId,
+        JSON.stringify(verifiedTitle)
+      );
+
+      return { content: [{ type: "text", text: JSON.stringify({ projectItem: verifiedItem }, null, 2) }] };
     }
   );
 
@@ -162,7 +291,40 @@ function makeMcpServer(authContext) {
           value: { singleSelectOptionId: option_id }
         }
       });
-      return { content: [{ type: "text", text: JSON.stringify(data.updateProjectV2ItemFieldValue, null, 2) }] };
+
+      const updatedItemId = data?.updateProjectV2ItemFieldValue?.projectV2Item?.id;
+      if (!updatedItemId) {
+        throw new Error("GitHub returned no project item for updateProjectV2ItemFieldValue.");
+      }
+
+      const items = await readProjectItems(project_id);
+      const verifiedItem = findProjectItem(items, item_id);
+      if (!verifiedItem) {
+        throw new Error("Read-after-write verification failed: project item was not found.");
+      }
+
+      const fieldValue = (verifiedItem.fieldValues?.nodes || []).find(value =>
+        value?.field?.id === field_id && Object.prototype.hasOwnProperty.call(value, "optionId")
+      );
+      if (!fieldValue) {
+        throw new Error("Read-after-write verification failed: target single-select field was not found on the item.");
+      }
+      if (fieldValue.optionId !== option_id) {
+        throw new Error(
+          "Read-after-write verification failed for single-select option. Expected " +
+          JSON.stringify(option_id) + ", got " + JSON.stringify(fieldValue.optionId)
+        );
+      }
+
+      console.log(
+        "[GPB][Verify] action=update_project_single_select project=%s item=%s field=%s option=%s verification=ok",
+        project_id,
+        item_id,
+        field_id,
+        option_id
+      );
+
+      return { content: [{ type: "text", text: JSON.stringify({ projectV2Item: verifiedItem }, null, 2) }] };
     }
   );
 
@@ -173,7 +335,23 @@ function makeMcpServer(authContext) {
     async ({ project_id, item_id }) => {
       const query = "mutation($projectId:ID!,$itemId:ID!){deleteProjectV2Item(input:{projectId:$projectId,itemId:$itemId}){deletedItemId}}";
       const data = await graphql(query, { projectId: project_id, itemId: item_id });
-      return { content: [{ type: "text", text: JSON.stringify(data.deleteProjectV2Item, null, 2) }] };
+      const deletedItemId = data?.deleteProjectV2Item?.deletedItemId;
+      if (!deletedItemId) {
+        throw new Error("GitHub returned no deletedItemId for deleteProjectV2Item.");
+      }
+
+      const items = await readProjectItems(project_id);
+      if (findProjectItem(items, item_id)) {
+        throw new Error("Read-after-write verification failed: deleted item is still present in the project.");
+      }
+
+      console.log(
+        "[GPB][Verify] action=delete_project_item project=%s item=%s verification=ok",
+        project_id,
+        item_id
+      );
+
+      return { content: [{ type: "text", text: JSON.stringify({ deletedItemId, verified: true }, null, 2) }] };
     }
   );
 
@@ -185,6 +363,12 @@ const transportSubjects = new Map();
 const transportClients = new Map();
 const transportAuth = new Map();
 const httpServer = createServer(async (req, res) => {
+  console.log(
+    "[GPB][HTTP] method=%s path=%s session=%s",
+    req.method,
+    req.url || "/",
+    req.headers["mcp-session-id"] ? "yes" : "no"
+  );
   const url = new URL(req.url || "/", oauth.publicUrl);
   if (await oauth.handle(req, res, url)) return;
 
