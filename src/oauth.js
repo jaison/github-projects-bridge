@@ -218,8 +218,14 @@ export function createOAuth() {
         if (typeof uri !== "string") return false;
         try {
           const parsed = new URL(uri);
-          return (parsed.protocol === "https:" && ["chatgpt.com", "chat.openai.com"].includes(parsed.hostname)) ||
-            (parsed.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname));
+          const loopback =
+            parsed.protocol === "http:" &&
+            ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname);
+          const secureWeb = parsed.protocol === "https:" &&
+            !parsed.username &&
+            !parsed.password &&
+            !parsed.hash;
+          return loopback || secureWeb;
         } catch {
           return false;
         }
